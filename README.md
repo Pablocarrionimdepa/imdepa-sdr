@@ -81,7 +81,7 @@ pip install -r requirements.txt
 2. Abra o `.env` em um editor de texto e insira sua chave:
 
 ```ini
-OPENAI_API_KEY="sk-sua-chave-aqui"
+OPENAI_API_KEY="sua_chave_openai_aqui"
 ```
 
 ### Passo 5 — Executar a Aplicação
