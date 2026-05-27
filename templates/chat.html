@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fernanda | Assistente Comercial Imdepa</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/chat.css">
+    <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="chat-header">
+            <div class="header-left">
+                <div class="avatar-wrapper">
+                    <div class="avatar">
+                        <img src="/static/img/fernanda_icon.png" alt="Fernanda" class="avatar-img">
+                    </div>
+                    <span class="online-dot"></span>
+                </div>
+                <div class="header-info">
+                    <h1>Fernanda</h1>
+                    <span class="status-text">Assistente Comercial Imdepa</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="imdepa-logo">
+                    <svg width="110" height="28" viewBox="0 0 110 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <text x="0" y="22" font-family="DM Sans, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF" letter-spacing="2">IMDEPA</text>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chat Messages Area -->
+        <main class="chat-messages" id="chatMessages">
+            <!-- Welcome card -->
+            <div class="welcome-card" id="welcomeCard">
+                <div class="welcome-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#C8102E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <h2>Bem-vindo à Imdepa</h2>
+                <p>Converse com a Fernanda, conheca a Imdepa e inicie seu atendimento comercial de forma simples e objetiva.</p>
+            </div>
+            
+            <!-- Messages will be appended here -->
+        </main>
+
+        <!-- Quick Reply Chips -->
+        <div class="quick-replies" id="quickReplies">
+            <button class="chip" data-message="Quero conhecer os produtos da Imdepa">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                Conhecer produtos
+            </button>
+            <button class="chip" data-message="Quero me tornar um parceiro/revendedor da Imdepa">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Ser parceiro
+            </button>
+            <button class="chip" data-message="Preciso de suporte técnico para uma aplicação específica">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Suporte técnico
+            </button>
+            <button class="chip" data-message="Quero saber sobre condições comerciais e formas de pagamento">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                Condições comerciais
+            </button>
+        </div>
+
+        <!-- Input Area -->
+        <footer class="chat-input-area">
+            <div class="input-wrapper">
+                <textarea 
+                    id="messageInput" 
+                    placeholder="Digite sua mensagem para iniciar o atendimento..." 
+                    rows="1"
+                    maxlength="2000"
+                ></textarea>
+                <button class="send-btn" id="sendBtn" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"/>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                </button>
+            </div>
+            <p class="disclaimer">Fernanda é uma assistente virtual da Imdepa. As informações fornecidas são para fins comerciais.</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
+
+
+
+
+
