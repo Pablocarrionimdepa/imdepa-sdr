@@ -1,4 +1,4 @@
-﻿"""
+"""
 Imdepa SDR Agent - Fernanda
 Aplicacao principal FastAPI
 """
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from ai_agent import extract_lead_info, get_ai_response
 from cnpj_lookup import lookup_cnpj
 from database import get_all_leads, get_lead_by_session, init_db, save_lead
+from gallabox import GallaboxClient, GallaboxError, parse_incoming_message, verify_webhook_signature
 
 load_dotenv()
 
@@ -40,6 +41,14 @@ class ChatResponse(BaseModel):
     session_id: str
     response: str
     lead_data: Optional[dict] = None
+
+
+class GallaboxSendMessage(BaseModel):
+    to: str
+    message: str
+    channel_id: Optional[str] = None
+    recipient_name: Optional[str] = None
+    conversation_id: Optional[str] = None
 
 
 conversations: dict[str, list[dict[str, str]]] = {}
@@ -122,6 +131,27 @@ def get_conversation(session_id: str) -> list[dict[str, str]]:
     return conversations[session_id]
 
 
+def get_gallabox_client() -> GallaboxClient:
+    api_key = os.getenv("GALLABOX_API_KEY", "")
+    api_secret = os.getenv("GALLABOX_API_SECRET", "")
+    api_base_url = os.getenv("GALLABOX_API_BASE_URL", "")
+
+    if not api_key or not api_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Configure GALLABOX_API_KEY e GALLABOX_API_SECRET.",
+        )
+
+    try:
+        return GallaboxClient(
+            api_key=api_key,
+            api_secret=api_secret,
+            api_base_url=api_base_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/", response_class=HTMLResponse)
 async def chat_page(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
@@ -200,6 +230,82 @@ async def api_delete_lead(lead_id: int):
     if not success:
         raise HTTPException(status_code=404, detail="Lead nao encontrado")
     return {"message": "Lead excluido com sucesso"}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/gallabox/send")
+async def api_gallabox_send(msg: GallaboxSendMessage):
+    client = get_gallabox_client()
+    try:
+        result = client.send_text_message(
+            to=msg.to,
+            text=msg.message,
+            channel_id=msg.channel_id,
+            recipient_name=msg.recipient_name,
+            conversation_id=msg.conversation_id,
+        )
+        return {"status": "sent", "provider_response": result}
+    except GallaboxError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/webhooks/gallabox")
+async def webhook_gallabox(request: Request):
+    raw_body = await request.body()
+    signature = request.headers.get("x-gallabox-signature", "")
+    webhook_secret = os.getenv("GALLABOX_WEBHOOK_SECRET", "")
+
+    if webhook_secret and not verify_webhook_signature(raw_body, signature, webhook_secret):
+        raise HTTPException(status_code=401, detail="Assinatura de webhook invalida")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Payload JSON invalido") from exc
+
+    incoming = parse_incoming_message(payload)
+    if not incoming:
+        return {"status": "ignored", "reason": "evento sem mensagem de texto"}
+
+    session_id = incoming.contact_id or incoming.conversation_id or incoming.from_number or str(uuid.uuid4())
+    history = get_conversation(session_id)
+    history.append({"role": "user", "content": incoming.text})
+
+    cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
+    if cnpj_response:
+        ai_response = cnpj_response.response
+    else:
+        try:
+            ai_response = get_ai_response(history)
+        except Exception as exc:
+            print(f"Erro ao gerar resposta da IA: {exc}")
+            ai_response = (
+                "Estou com uma instabilidade momentanea no atendimento. "
+                "Pode tentar novamente em alguns instantes?"
+            )
+        history.append({"role": "assistant", "content": ai_response})
+
+    client = get_gallabox_client()
+    try:
+        provider_response = client.send_text_message(
+            to=incoming.from_number,
+            text=ai_response,
+            channel_id=incoming.channel_id,
+            recipient_name=incoming.recipient_name,
+            conversation_id=incoming.conversation_id,
+        )
+    except GallaboxError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "provider_response": provider_response,
+    }
 
 
 def handle_cnpj_lookup(session_id: str, user_message: str, history: list[dict[str, str]]) -> Optional[ChatResponse]:
