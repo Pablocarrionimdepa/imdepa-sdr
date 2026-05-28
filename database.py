@@ -1,4 +1,4 @@
-﻿"""
+"""
 Modulo de banco de dados SQLite para armazenamento de leads.
 """
 
@@ -8,15 +8,41 @@ import sqlite3
 from datetime import datetime
 from typing import Optional
 
-DB_PATH = os.getenv("DB_PATH", "leads.db")
+DEFAULT_DB_PATH = "leads.db"
 
 
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
+def _resolve_db_path() -> str:
+    raw = str(os.getenv("DB_PATH", DEFAULT_DB_PATH) or "").strip()
+    if not raw:
+        return DEFAULT_DB_PATH
+
+    # Railway Variables podem vir com aspas se coladas do .env.
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+        raw = raw[1:-1].strip()
+
+    return raw or DEFAULT_DB_PATH
+
+
+def _ensure_db_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 def get_db():
     """Retorna uma conexao com o banco de dados."""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = _resolve_db_path()
+
+    try:
+        _ensure_db_parent_dir(db_path)
+        conn = sqlite3.connect(db_path)
+    except sqlite3.OperationalError as exc:
+        print(f"Falha ao abrir DB_PATH='{db_path}': {exc}. Usando fallback '{DEFAULT_DB_PATH}'.")
+        conn = sqlite3.connect(DEFAULT_DB_PATH)
+
     conn.row_factory = sqlite3.Row
     return conn
 
