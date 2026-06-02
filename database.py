@@ -62,6 +62,8 @@ def init_db():
             cnpj TEXT DEFAULT '',
             email TEXT DEFAULT '',
             telefone TEXT DEFAULT '',
+            phone_normalized TEXT DEFAULT '',
+            channel_id TEXT DEFAULT '',
             email_telefone TEXT DEFAULT '',
             segmento TEXT DEFAULT '',
             produtos_interesse TEXT DEFAULT '',
@@ -83,6 +85,10 @@ def init_db():
         cursor.execute("ALTER TABLE leads ADD COLUMN email TEXT DEFAULT ''")
     if "telefone" not in existing_columns:
         cursor.execute("ALTER TABLE leads ADD COLUMN telefone TEXT DEFAULT ''")
+    if "phone_normalized" not in existing_columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN phone_normalized TEXT DEFAULT ''")
+    if "channel_id" not in existing_columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN channel_id TEXT DEFAULT ''")
     if "email_telefone" not in existing_columns:
         cursor.execute("ALTER TABLE leads ADD COLUMN email_telefone TEXT DEFAULT ''")
 
@@ -112,6 +118,8 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
                 "cnpj": "cnpj",
                 "email": "email",
                 "telefone": "telefone",
+                "phone_normalized": "phone_normalized",
+                "channel_id": "channel_id",
                 "email_telefone": "email_telefone",
                 "segmento": "segmento",
                 "produtos_interesse": "produtos_interesse",
@@ -138,22 +146,23 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
 
                 cursor.execute("SELECT * FROM leads WHERE session_id = ?", (session_id,))
                 updated = cursor.fetchone()
-                status = "qualificado" if _is_qualified_lead(updated) else "novo"
+                status = _resolve_next_status(updated, existing["status"])
                 cursor.execute(
                     "UPDATE leads SET status = ? WHERE session_id = ?",
                     (status, session_id),
                 )
         else:
-            status = "qualificado" if _is_qualified_lead(normalized) else "novo"
+            status = _resolve_next_status(normalized, str(normalized.get("status", "")).strip())
             now = datetime.now().isoformat()
             cursor.execute(
                 """
                 INSERT INTO leads (
-                    session_id, empresa, contato, cnpj, email, telefone, email_telefone, segmento,
+                    session_id, empresa, contato, cnpj, email, telefone, phone_normalized, channel_id,
+                    email_telefone, segmento,
                     produtos_interesse, volume_compra, fornecedor_atual,
                     dores_necessidades, decisores, proximo_passo, status, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -162,6 +171,8 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
                     normalized.get("cnpj", ""),
                     normalized.get("email", ""),
                     normalized.get("telefone", ""),
+                    normalized.get("phone_normalized", ""),
+                    normalized.get("channel_id", ""),
                     normalized.get("email_telefone", ""),
                     normalized.get("segmento", ""),
                     normalized.get("produtos_interesse", ""),
@@ -182,6 +193,52 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
         print(f"Erro ao salvar lead: {exc}")
         conn.rollback()
         return False
+    finally:
+        conn.close()
+
+
+def create_active_lead(name: str, phone: str, channel_id: str) -> dict:
+    """Cria ou reativa um lead iniciado por telefone."""
+    normalized_phone = normalize_phone(phone)
+    if not normalized_phone:
+        raise ValueError("phone e obrigatorio")
+
+    existing = get_lead_by_phone(phone)
+    session_id = existing["session_id"] if existing else f"lead:{normalized_phone}"
+    now = datetime.now().isoformat()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        if existing:
+            cursor.execute(
+                """
+                UPDATE leads
+                SET contato = ?, telefone = ?, phone_normalized = ?, channel_id = ?,
+                    status = 'ACTIVE', updated_at = ?
+                WHERE id = ?
+                """,
+                (name.strip(), phone.strip(), normalized_phone, channel_id.strip(), now, existing["id"]),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO leads (
+                    session_id, contato, telefone, phone_normalized, channel_id,
+                    status, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                """,
+                (session_id, name.strip(), phone.strip(), normalized_phone, channel_id.strip(), now, now),
+            )
+
+        conn.commit()
+        cursor.execute("SELECT * FROM leads WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        return _serialize_lead(row)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -212,6 +269,48 @@ def get_lead_by_session(session_id: str) -> Optional[dict]:
 
     conn.close()
     return _serialize_lead(row) if row else None
+
+
+def get_lead_by_phone(phone: str) -> Optional[dict]:
+    """Retorna um lead pelo telefone, tolerando formatos diferentes."""
+    normalized_phone = normalize_phone(phone)
+    if not normalized_phone:
+        return None
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM leads ORDER BY updated_at DESC")
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    for row in rows:
+        row_phone_normalized = row["phone_normalized"] if "phone_normalized" in row.keys() else ""
+        row_phone = row["telefone"] if "telefone" in row.keys() else ""
+        if row_phone_normalized == normalized_phone or normalize_phone(row_phone) == normalized_phone:
+            return _serialize_lead(row)
+    return None
+
+
+def set_lead_status(session_id: str, status: str) -> bool:
+    """Atualiza somente o status de um lead."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            "UPDATE leads SET status = ?, updated_at = ? WHERE session_id = ?",
+            (status, datetime.now().isoformat(), session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as exc:
+        print(f"Erro ao atualizar status do lead: {exc}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 def update_lead(lead_id: int, data: dict) -> bool:
@@ -275,6 +374,11 @@ def delete_lead(lead_id: int) -> bool:
 def _normalize_contact_fields(lead_info: dict) -> dict:
     normalized = dict(lead_info or {})
 
+    if normalized.get("name") and not normalized.get("contato"):
+        normalized["contato"] = normalized.get("name")
+    if normalized.get("phone") and not normalized.get("telefone"):
+        normalized["telefone"] = normalized.get("phone")
+
     email = str(normalized.get("email", "")).strip()
     telefone = str(normalized.get("telefone", "")).strip()
     legacy = str(normalized.get("email_telefone", "")).strip()
@@ -287,8 +391,14 @@ def _normalize_contact_fields(lead_info: dict) -> dict:
 
     normalized["email"] = email
     normalized["telefone"] = telefone
+    normalized["phone_normalized"] = normalize_phone(telefone)
+    normalized["channel_id"] = str(normalized.get("channel_id", "")).strip()
     normalized["email_telefone"] = _build_email_phone_summary(email, telefone)
     return normalized
+
+
+def normalize_phone(phone: str) -> str:
+    return re.sub(r"\D+", "", str(phone or ""))
 
 
 def _build_email_phone_summary(email: str, telefone: str) -> str:
@@ -303,6 +413,19 @@ def _is_qualified_lead(lead_data: Optional[dict]) -> bool:
     return all(str(_get_lead_value(lead_data, field)).strip() for field in required_fields)
 
 
+def is_qualified_lead_data(lead_data: Optional[dict]) -> bool:
+    return _is_qualified_lead(lead_data)
+
+
+def _resolve_next_status(lead_data: Optional[dict], current_status: str = "") -> str:
+    status = str(current_status or "").strip()
+    if status == "INACTIVE":
+        return "INACTIVE"
+    if status == "ACTIVE":
+        return "INACTIVE" if _is_qualified_lead(lead_data) else "ACTIVE"
+    return "qualificado" if _is_qualified_lead(lead_data) else "novo"
+
+
 def _get_lead_value(lead_data, field: str) -> str:
     if isinstance(lead_data, dict):
         return str(lead_data.get(field, ""))
@@ -315,6 +438,8 @@ def _get_lead_value(lead_data, field: str) -> str:
 def _serialize_lead(row: sqlite3.Row) -> dict:
     email = row["email"] if "email" in row.keys() else ""
     telefone = row["telefone"] if "telefone" in row.keys() else ""
+    phone_normalized = row["phone_normalized"] if "phone_normalized" in row.keys() else normalize_phone(telefone)
+    channel_id = row["channel_id"] if "channel_id" in row.keys() else ""
     email_telefone = row["email_telefone"] if "email_telefone" in row.keys() else _build_email_phone_summary(email, telefone)
 
     if not email_telefone:
@@ -328,6 +453,8 @@ def _serialize_lead(row: sqlite3.Row) -> dict:
         "cnpj": row["cnpj"],
         "email": email,
         "telefone": telefone,
+        "phone_normalized": phone_normalized,
+        "channel_id": channel_id,
         "email_telefone": email_telefone,
         "segmento": row["segmento"],
         "produtos_interesse": row["produtos_interesse"],

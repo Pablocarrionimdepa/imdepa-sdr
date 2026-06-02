@@ -31,8 +31,28 @@ Cada push na branch conectada gera novo deploy automaticamente.
 
 ## 7) Verificacao
 - URL principal: `/`
+- Healthcheck: `/health`
 - Painel de leads: `/leads`
 - API de leads: `/api/leads`
+
+## 8) Endpoints para Gallabox
+Dominio publico do service:
+
+- `GET https://imdepa-sdr-production.up.railway.app/health`
+- `POST https://imdepa-sdr-production.up.railway.app/start`
+- `POST https://imdepa-sdr-production.up.railway.app/webhook/gallabox`
+
+Payload esperado em `POST /start`:
+
+```json
+{
+  "name": "Nome do lead",
+  "phone": "5511999999999",
+  "channel_id": "id-do-canal-gallabox"
+}
+```
+
+O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 
 ## Opcional: publicar versao webhook Gallabox
 Se quiser subir o app de webhook (`app_gallabox.py`) em outro service, use start command:

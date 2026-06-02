@@ -16,7 +16,16 @@ from pydantic import BaseModel
 
 from ai_agent import extract_lead_info, get_ai_response
 from cnpj_lookup import lookup_cnpj
-from database import get_all_leads, get_lead_by_session, init_db, save_lead
+from database import (
+    create_active_lead,
+    get_all_leads,
+    get_lead_by_phone,
+    get_lead_by_session,
+    init_db,
+    is_qualified_lead_data,
+    save_lead,
+    set_lead_status,
+)
 from gallabox import GallaboxClient, GallaboxError, parse_incoming_message, verify_webhook_signature
 
 load_dotenv()
@@ -49,6 +58,12 @@ class GallaboxSendMessage(BaseModel):
     channel_id: Optional[str] = None
     recipient_name: Optional[str] = None
     conversation_id: Optional[str] = None
+
+
+class StartLeadRequest(BaseModel):
+    name: str
+    phone: str
+    channel_id: str
 
 
 conversations: dict[str, list[dict[str, str]]] = {}
@@ -131,6 +146,23 @@ def get_conversation(session_id: str) -> list[dict[str, str]]:
     return conversations[session_id]
 
 
+def get_initial_message() -> str:
+    return (
+        "Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores "
+        "distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. "
+        "Para iniciar seu atendimento, me informe o CNPJ da empresa."
+    )
+
+
+def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
+    return bool(
+        os.getenv("GALLABOX_API_KEY", "").strip()
+        and os.getenv("GALLABOX_API_SECRET", "").strip()
+        and os.getenv("GALLABOX_API_BASE_URL", "").strip()
+        and (channel_id or os.getenv("GALLABOX_CHANNEL_ID", "").strip())
+    )
+
+
 def get_gallabox_client() -> GallaboxClient:
     api_key = os.getenv("GALLABOX_API_KEY", "")
     api_secret = os.getenv("GALLABOX_API_SECRET", "")
@@ -198,11 +230,7 @@ async def chat_start():
     session_id = str(uuid.uuid4())
     history = get_conversation(session_id)
 
-    initial_message = (
-        "Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores "
-        "distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. "
-        "Para iniciar seu atendimento, me informe o CNPJ da empresa."
-    )
+    initial_message = get_initial_message()
 
     history.append({"role": "assistant", "content": initial_message})
 
@@ -237,6 +265,31 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/start")
+async def start_lead(payload: StartLeadRequest):
+    name = payload.name.strip()
+    phone = payload.phone.strip()
+    channel_id = payload.channel_id.strip()
+
+    if not name or not phone or not channel_id:
+        raise HTTPException(status_code=422, detail="name, phone e channel_id sao obrigatorios.")
+
+    try:
+        lead = create_active_lead(name=name, phone=phone, channel_id=channel_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history = get_conversation(lead["session_id"])
+    if len(history) == 1:
+        history.append({"role": "assistant", "content": get_initial_message()})
+
+    return {
+        "status": "ACTIVE",
+        "session_id": lead["session_id"],
+        "lead": lead,
+    }
+
+
 @app.post("/api/gallabox/send")
 async def api_gallabox_send(msg: GallaboxSendMessage):
     client = get_gallabox_client()
@@ -253,8 +306,17 @@ async def api_gallabox_send(msg: GallaboxSendMessage):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/webhooks/gallabox")
+@app.post("/webhook/gallabox")
 async def webhook_gallabox(request: Request):
+    return await handle_gallabox_webhook(request)
+
+
+@app.post("/webhooks/gallabox")
+async def webhook_gallabox_legacy(request: Request):
+    return await handle_gallabox_webhook(request)
+
+
+async def handle_gallabox_webhook(request: Request):
     raw_body = await request.body()
     signature = request.headers.get("x-gallabox-signature", "")
     webhook_secret = os.getenv("GALLABOX_WEBHOOK_SECRET", "")
@@ -267,11 +329,19 @@ async def webhook_gallabox(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Payload JSON invalido") from exc
 
+    print(f"Gallabox webhook body: {payload}")
+
     incoming = parse_incoming_message(payload)
     if not incoming:
         return {"status": "ignored", "reason": "evento sem mensagem de texto"}
 
-    session_id = incoming.contact_id or incoming.conversation_id or incoming.from_number or str(uuid.uuid4())
+    lead = get_lead_by_phone(incoming.from_number)
+    if not lead:
+        return {"status": "ignored", "reason": "lead nao encontrado pelo telefone"}
+    if lead["status"] != "ACTIVE":
+        return {"status": "ignored", "reason": "lead inativo", "lead_status": lead["status"]}
+
+    session_id = lead["session_id"]
     history = get_conversation(session_id)
     history.append({"role": "user", "content": incoming.text})
 
@@ -289,21 +359,41 @@ async def webhook_gallabox(request: Request):
             )
         history.append({"role": "assistant", "content": ai_response})
 
-    client = get_gallabox_client()
     try:
-        provider_response = client.send_text_message(
-            to=incoming.from_number,
-            text=ai_response,
-            channel_id=incoming.channel_id,
-            recipient_name=incoming.recipient_name,
-            conversation_id=incoming.conversation_id,
-        )
-    except GallaboxError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        lead_info = extract_lead_info(history)
+        if lead_info and any(v for v in lead_info.values() if v):
+            save_lead(session_id, lead_info)
+    except Exception:
+        lead_info = None
+
+    updated_lead = get_lead_by_session(session_id)
+    if is_qualified_lead_data(updated_lead):
+        set_lead_status(session_id, "INACTIVE")
+        if updated_lead:
+            updated_lead["status"] = "INACTIVE"
+
+    provider_response = None
+    channel_id = incoming.channel_id or lead.get("channel_id")
+    if is_gallabox_send_configured(channel_id):
+        client = get_gallabox_client()
+        try:
+            provider_response = client.send_text_message(
+                to=incoming.from_number,
+                text=ai_response,
+                channel_id=channel_id,
+                recipient_name=incoming.recipient_name,
+                conversation_id=incoming.conversation_id,
+            )
+        except GallaboxError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    else:
+        print(f"Gallabox send not configured. Bot response: {ai_response}")
 
     return {
         "status": "ok",
         "session_id": session_id,
+        "response": ai_response,
+        "lead_status": updated_lead["status"] if updated_lead else lead["status"],
         "provider_response": provider_response,
     }
 
