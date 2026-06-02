@@ -40,6 +40,7 @@ Dominio publico do service:
 
 - `GET https://imdepa-sdr-production.up.railway.app/health`
 - `POST https://imdepa-sdr-production.up.railway.app/start`
+- `POST https://imdepa-sdr-production.up.railway.app/webhook/start`
 - `POST https://imdepa-sdr-production.up.railway.app/webhook/gallabox`
 
 Payload esperado em `POST /start`:
@@ -51,6 +52,8 @@ Payload esperado em `POST /start`:
   "channel_id": "id-do-canal-gallabox"
 }
 ```
+
+Use `POST /webhook/start` no bloco API Call da Gallabox quando quiser ativar o lead antes da conversa. Ele aceita `phone` e `channel_id` no payload, e tambem tenta ler formatos comuns como `contact.phone`, `data.contact.phone`, `message.contact.phone` e `message.channelId`.
 
 O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 

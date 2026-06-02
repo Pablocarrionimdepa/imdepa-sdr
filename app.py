@@ -5,7 +5,7 @@ Aplicacao principal FastAPI
 
 import os
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -267,12 +267,52 @@ async def health():
 
 @app.post("/start")
 async def start_lead(payload: StartLeadRequest):
-    name = payload.name.strip()
-    phone = payload.phone.strip()
-    channel_id = payload.channel_id.strip()
+    lead = activate_lead(
+        name=payload.name,
+        phone=payload.phone,
+        channel_id=payload.channel_id,
+    )
 
-    if not name or not phone or not channel_id:
-        raise HTTPException(status_code=422, detail="name, phone e channel_id sao obrigatorios.")
+    return {
+        "status": "ACTIVE",
+        "session_id": lead["session_id"],
+        "lead": lead,
+    }
+
+
+@app.post("/webhook/start")
+async def webhook_start(request: Request):
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Payload JSON invalido") from exc
+
+    print(f"Gallabox start webhook body: {payload}")
+
+    fields = extract_start_payload(payload)
+    lead = activate_lead(
+        name=fields.get("name", ""),
+        phone=fields.get("phone", ""),
+        channel_id=fields.get("channel_id", ""),
+    )
+
+    return {
+        "status": "ACTIVE",
+        "session_id": lead["session_id"],
+        "lead": lead,
+    }
+
+
+def activate_lead(name: str, phone: str, channel_id: str) -> dict:
+    name = name.strip()
+    phone = phone.strip()
+    channel_id = channel_id.strip()
+
+    if not phone or not channel_id:
+        raise HTTPException(status_code=422, detail="phone e channel_id sao obrigatorios.")
+
+    if not name:
+        name = phone
 
     try:
         lead = create_active_lead(name=name, phone=phone, channel_id=channel_id)
@@ -283,11 +323,83 @@ async def start_lead(payload: StartLeadRequest):
     if len(history) == 1:
         history.append({"role": "assistant", "content": get_initial_message()})
 
+    return lead
+
+
+def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
     return {
-        "status": "ACTIVE",
-        "session_id": lead["session_id"],
-        "lead": lead,
+        "name": _first_payload_value(
+            payload,
+            (
+                "name",
+                "customer_name",
+                "contact_name",
+                "recipient_name",
+                "contact.name",
+                "customer.name",
+                "recipient.name",
+                "data.name",
+                "data.contact.name",
+                "data.customer.name",
+                "message.contact.name",
+            ),
+        ),
+        "phone": _first_payload_value(
+            payload,
+            (
+                "phone",
+                "mobile",
+                "from",
+                "from_number",
+                "contact.phone",
+                "contact.mobile",
+                "customer.phone",
+                "recipient.phone",
+                "data.phone",
+                "data.mobile",
+                "data.from",
+                "data.contact.phone",
+                "data.contact.mobile",
+                "message.phone",
+                "message.from",
+                "message.from_number",
+                "message.contact.phone",
+                "message.whatsapp.from",
+            ),
+        ),
+        "channel_id": _first_payload_value(
+            payload,
+            (
+                "channel_id",
+                "channelId",
+                "channel.id",
+                "data.channel_id",
+                "data.channelId",
+                "data.channel.id",
+                "message.channel_id",
+                "message.channelId",
+                "message.channel.id",
+            ),
+        )
+        or os.getenv("GALLABOX_CHANNEL_ID", ""),
     }
+
+
+def _first_payload_value(payload: dict[str, Any], paths: tuple[str, ...]) -> str:
+    for path in paths:
+        value = _payload_value(payload, path)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _payload_value(payload: dict[str, Any], path: str) -> Any:
+    current: Any = payload
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
 
 
 @app.post("/api/gallabox/send")
