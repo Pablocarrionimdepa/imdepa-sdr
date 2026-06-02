@@ -163,6 +163,15 @@ def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
     )
 
 
+def should_skip_gallabox_signature_validation() -> bool:
+    return os.getenv("GALLABOX_SKIP_SIGNATURE_VALIDATION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def get_gallabox_client() -> GallaboxClient:
     api_key = os.getenv("GALLABOX_API_KEY", "")
     api_secret = os.getenv("GALLABOX_API_SECRET", "")
@@ -433,8 +442,20 @@ async def handle_gallabox_webhook(request: Request):
     signature = request.headers.get("x-gallabox-signature", "")
     webhook_secret = os.getenv("GALLABOX_WEBHOOK_SECRET", "")
 
-    if webhook_secret and not verify_webhook_signature(raw_body, signature, webhook_secret):
-        raise HTTPException(status_code=401, detail="Assinatura de webhook invalida")
+    if should_skip_gallabox_signature_validation():
+        print("Gallabox webhook signature validation skipped by GALLABOX_SKIP_SIGNATURE_VALIDATION.")
+    elif webhook_secret:
+        is_valid_signature = verify_webhook_signature(raw_body, signature, webhook_secret)
+        if not is_valid_signature:
+            print(
+                "Gallabox webhook invalid signature: "
+                f"signature_present={bool(signature)}, "
+                f"body_bytes={len(raw_body)}, "
+                f"secret_configured={bool(webhook_secret)}"
+            )
+            raise HTTPException(status_code=401, detail="Assinatura de webhook invalida")
+    else:
+        print("Gallabox webhook signature validation disabled because GALLABOX_WEBHOOK_SECRET is empty.")
 
     try:
         payload = await request.json()

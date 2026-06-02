@@ -57,6 +57,15 @@ Use `POST /webhook/start` no bloco API Call da Gallabox quando quiser ativar o l
 
 O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 
+### Validacao temporaria da assinatura Gallabox
+Para confirmar o fluxo completo enquanto a secret e ajustada, configure temporariamente no Railway:
+
+```ini
+GALLABOX_SKIP_SIGNATURE_VALIDATION=true
+```
+
+Com essa variavel ligada, o app aceita o webhook mesmo que `x-gallabox-signature` nao bata. Depois do teste, remova a variavel ou altere para `false` e garanta que `GALLABOX_WEBHOOK_SECRET` seja exatamente a mesma secret configurada no webhook da Gallabox.
+
 ## Opcional: publicar versao webhook Gallabox
 Se quiser subir o app de webhook (`app_gallabox.py`) em outro service, use start command:
 `uvicorn app_gallabox:app --host 0.0.0.0 --port $PORT`
