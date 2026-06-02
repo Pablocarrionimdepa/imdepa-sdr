@@ -441,6 +441,8 @@ async def handle_gallabox_webhook(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Payload JSON invalido") from exc
 
+    print("=== WEBHOOK RECEBIDO ===")
+    print(payload)
     print(f"Gallabox webhook body: {payload}")
 
     incoming = parse_incoming_message(payload)
