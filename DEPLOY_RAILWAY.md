@@ -63,13 +63,23 @@ Durante a qualificacao, cada mensagem do cliente e cada resposta da IA sao grava
 
 Quando a qualificacao termina, o app salva um resumo final em `qualification_summary`, muda o lead para `INACTIVE` e bloqueia novas mensagens desse telefone no bot.
 
-Para encerrar a conversa na Gallabox via API, configure o path correto fornecido pela Gallabox:
+Para encerrar a conversa na Gallabox via API, configure o path correto fornecido pela Gallabox. A documentacao oficial usa o conceito de conversa `Resolved`, e o suporte/FAQ informa que a conversa precisa estar atribuida ao usuario/agente correto para ser resolvida.
 
 ```ini
-GALLABOX_CLOSE_CONVERSATION_PATH=/conversations/{conversation_id}/close
+GALLABOX_RESOLVE_CONVERSATION_PATH=/devapi/accounts/{account_id}/CAMINHO-DE-RESOLVE
+GALLABOX_RESOLVE_CONVERSATION_METHOD=POST
+GALLABOX_ACCOUNT_ID=seu-account-id
 ```
 
-Se essa variavel nao estiver configurada, o app apenas finaliza internamente o lead e registra o resumo. O envio da ultima resposta ao cliente continua funcionando normalmente.
+Placeholders aceitos em `GALLABOX_RESOLVE_CONVERSATION_PATH`: `{account_id}`, `{conversation_id}`, `{phone}` e `{channel_id}`.
+
+Se o endpoint exigir body especifico, configure tambem:
+
+```ini
+GALLABOX_RESOLVE_CONVERSATION_BODY={"phone":"{phone}","channelId":"{channel_id}","status":"RESOLVED"}
+```
+
+Se essas variaveis nao estiverem configuradas, o app apenas finaliza internamente o lead e registra o resumo. O envio da ultima resposta ao cliente continua funcionando normalmente.
 
 ### Validacao temporaria da assinatura Gallabox
 Para confirmar o fluxo completo enquanto a secret e ajustada, configure temporariamente no Railway:

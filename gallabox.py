@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib import error, request
+from urllib.parse import quote
 
 
 class GallaboxError(Exception):
@@ -173,26 +174,70 @@ class GallaboxClient:
         except json.JSONDecodeError:
             return {"ok": True}
 
-    def close_conversation(self, conversation_id: str) -> Optional[dict[str, Any]]:
+    def resolve_conversation(
+        self,
+        *,
+        conversation_id: Optional[str] = None,
+        phone: Optional[str] = None,
+        channel_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
         """
-        Encerra/resolved a conversa na Gallabox quando um endpoint for configurado.
+        Marca a conversa como resolvida na Gallabox quando um endpoint for configurado.
 
-        Configure GALLABOX_CLOSE_CONVERSATION_PATH com um path contendo
-        "{conversation_id}", por exemplo:
-        /conversations/{conversation_id}/close
+        A documentacao publica confirma o conceito de conversas resolvidas,
+        mas o path REST pode variar por conta/integracao. Configure:
+        - GALLABOX_RESOLVE_CONVERSATION_PATH
+        - GALLABOX_RESOLVE_CONVERSATION_METHOD (default: POST)
+        - GALLABOX_RESOLVE_CONVERSATION_BODY (JSON opcional com placeholders)
+
+        Placeholders aceitos: {conversation_id}, {phone}, {channel_id}, {account_id}
         """
-        conversation_id = str(conversation_id or "").strip()
-        endpoint_path = os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip()
-        if not conversation_id or not endpoint_path:
+        endpoint_path = (
+            os.getenv("GALLABOX_RESOLVE_CONVERSATION_PATH", "").strip()
+            or os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip()
+        )
+        if not endpoint_path:
             return None
         if not self.api_base_url:
-            raise GallaboxError("Defina GALLABOX_API_BASE_URL para encerrar conversas.")
-        if "{conversation_id}" not in endpoint_path:
-            raise GallaboxError("GALLABOX_CLOSE_CONVERSATION_PATH deve conter {conversation_id}.")
+            raise GallaboxError("Defina GALLABOX_API_BASE_URL para resolver conversas.")
 
-        url = f"{self.api_base_url}{endpoint_path.format(conversation_id=conversation_id)}"
-        body = json.dumps({"status": "resolved"}).encode("utf-8")
-        req = request.Request(url=url, data=body, method="POST")
+        values = {
+            "conversation_id": str(conversation_id or "").strip(),
+            "phone": str(phone or "").strip(),
+            "channel_id": str(channel_id or "").strip(),
+            "account_id": os.getenv("GALLABOX_ACCOUNT_ID", "").strip(),
+        }
+
+        required_placeholders = {
+            placeholder
+            for placeholder in values
+            if f"{{{placeholder}}}" in endpoint_path
+        }
+        missing = [placeholder for placeholder in required_placeholders if not values[placeholder]]
+        if missing:
+            raise GallaboxError(
+                "Dados ausentes para resolver conversa na Gallabox: "
+                + ", ".join(sorted(missing))
+            )
+
+        formatted_values = {key: quote(value, safe="") for key, value in values.items()}
+        url = f"{self.api_base_url}{endpoint_path.format(**formatted_values)}"
+        method = os.getenv("GALLABOX_RESOLVE_CONVERSATION_METHOD", "POST").strip().upper() or "POST"
+        body_template = os.getenv("GALLABOX_RESOLVE_CONVERSATION_BODY", "").strip()
+        if body_template:
+            body_text = body_template.format(**values)
+        else:
+            body_text = json.dumps(
+                {
+                    "status": "RESOLVED",
+                    "conversationId": values["conversation_id"],
+                    "phone": values["phone"],
+                    "channelId": values["channel_id"],
+                }
+            )
+
+        body = body_text.encode("utf-8")
+        req = request.Request(url=url, data=body, method=method)
         req.add_header("Content-Type", "application/json")
         req.add_header("apiKey", self.api_key)
         req.add_header("apiSecret", self.api_secret)
@@ -208,6 +253,9 @@ class GallaboxClient:
             raise GallaboxError(f"Falha de rede ao encerrar conversa: {exc.reason}") from exc
         except json.JSONDecodeError:
             return {"ok": True}
+
+    def close_conversation(self, conversation_id: str) -> Optional[dict[str, Any]]:
+        return self.resolve_conversation(conversation_id=conversation_id)
 
 
 def _to_optional_str(value: Any) -> Optional[str]:

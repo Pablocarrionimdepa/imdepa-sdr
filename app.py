@@ -456,13 +456,23 @@ async def api_gallabox_send(msg: GallaboxSendMessage):
 def close_gallabox_conversation_if_configured(
     client: Optional[GallaboxClient],
     conversation_id: Optional[str],
+    phone: Optional[str],
+    channel_id: Optional[str],
 ) -> Optional[dict]:
-    if not conversation_id or not os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip():
+    resolve_path = (
+        os.getenv("GALLABOX_RESOLVE_CONVERSATION_PATH", "").strip()
+        or os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip()
+    )
+    if not resolve_path:
         return None
 
     gallabox_client = client or get_gallabox_client()
     try:
-        return gallabox_client.close_conversation(conversation_id)
+        return gallabox_client.resolve_conversation(
+            conversation_id=conversation_id,
+            phone=phone,
+            channel_id=channel_id,
+        )
     except GallaboxError as exc:
         print(f"Erro ao encerrar conversa na Gallabox: {exc}")
         return {"status": "error", "detail": str(exc)}
@@ -595,7 +605,12 @@ async def handle_gallabox_webhook(request: Request):
         print(f"Gallabox send not configured. Bot response: {ai_response}")
 
     if qualification_finished:
-        close_response = close_gallabox_conversation_if_configured(client, incoming.conversation_id)
+        close_response = close_gallabox_conversation_if_configured(
+            client,
+            incoming.conversation_id,
+            incoming.from_number,
+            channel_id,
+        )
 
     return {
         "status": "ok",
