@@ -5,6 +5,7 @@ Modulo de banco de dados SQLite para armazenamento de leads.
 import os
 import re
 import sqlite3
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -72,6 +73,8 @@ def init_db():
             dores_necessidades TEXT DEFAULT '',
             decisores TEXT DEFAULT '',
             proximo_passo TEXT DEFAULT '',
+            qualification_summary TEXT DEFAULT '',
+            qualification_completed_at TIMESTAMP,
             status TEXT DEFAULT 'novo',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -91,6 +94,30 @@ def init_db():
         cursor.execute("ALTER TABLE leads ADD COLUMN channel_id TEXT DEFAULT ''")
     if "email_telefone" not in existing_columns:
         cursor.execute("ALTER TABLE leads ADD COLUMN email_telefone TEXT DEFAULT ''")
+    if "qualification_summary" not in existing_columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN qualification_summary TEXT DEFAULT ''")
+    if "qualification_completed_at" not in existing_columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN qualification_completed_at TIMESTAMP")
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lead_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_lead_messages_session_id
+        ON lead_messages(session_id, created_at, id)
+        """
+    )
 
     conn.commit()
     conn.close()
@@ -271,6 +298,115 @@ def get_lead_by_session(session_id: str) -> Optional[dict]:
     return _serialize_lead(row) if row else None
 
 
+def append_conversation_message(
+    session_id: str,
+    role: str,
+    content: str,
+    metadata: Optional[dict] = None,
+) -> bool:
+    """Registra uma mensagem individual do historico da qualificacao."""
+    role = str(role or "").strip()
+    content = str(content or "").strip()
+    if not session_id or role not in {"system", "user", "assistant"} or not content:
+        return False
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """
+            INSERT INTO lead_messages (session_id, role, content, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                role,
+                content,
+                json.dumps(metadata or {}, ensure_ascii=False),
+                now,
+            ),
+        )
+        cursor.execute(
+            "UPDATE leads SET updated_at = ? WHERE session_id = ?",
+            (now, session_id),
+        )
+        conn.commit()
+        return True
+    except Exception as exc:
+        print(f"Erro ao salvar mensagem da conversa: {exc}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def get_conversation_messages(session_id: str) -> list[dict]:
+    """Retorna o historico persistido da sessao."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, session_id, role, content, metadata, created_at
+        FROM lead_messages
+        WHERE session_id = ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (session_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    messages = []
+    for row in rows:
+        metadata = {}
+        if row["metadata"]:
+            try:
+                metadata = json.loads(row["metadata"])
+            except json.JSONDecodeError:
+                metadata = {}
+        messages.append(
+            {
+                "id": row["id"],
+                "session_id": row["session_id"],
+                "role": row["role"],
+                "content": row["content"],
+                "metadata": metadata,
+                "created_at": row["created_at"],
+            }
+        )
+    return messages
+
+
+def save_qualification_summary(session_id: str, summary: str) -> bool:
+    """Salva o resumo final da qualificacao no lead."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        now = datetime.now().isoformat()
+        cursor.execute(
+            """
+            UPDATE leads
+            SET qualification_summary = ?,
+                qualification_completed_at = ?,
+                updated_at = ?
+            WHERE session_id = ?
+            """,
+            (str(summary or "").strip(), now, now, session_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as exc:
+        print(f"Erro ao salvar resumo da qualificacao: {exc}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 def get_lead_by_phone(phone: str) -> Optional[dict]:
     """Retorna um lead pelo telefone, tolerando formatos diferentes."""
     normalized_phone = normalize_phone(phone)
@@ -440,6 +576,10 @@ def _serialize_lead(row: sqlite3.Row) -> dict:
     telefone = row["telefone"] if "telefone" in row.keys() else ""
     phone_normalized = row["phone_normalized"] if "phone_normalized" in row.keys() else normalize_phone(telefone)
     channel_id = row["channel_id"] if "channel_id" in row.keys() else ""
+    qualification_summary = row["qualification_summary"] if "qualification_summary" in row.keys() else ""
+    qualification_completed_at = (
+        row["qualification_completed_at"] if "qualification_completed_at" in row.keys() else None
+    )
     email_telefone = row["email_telefone"] if "email_telefone" in row.keys() else _build_email_phone_summary(email, telefone)
 
     if not email_telefone:
@@ -463,6 +603,8 @@ def _serialize_lead(row: sqlite3.Row) -> dict:
         "dores_necessidades": row["dores_necessidades"],
         "decisores": row["decisores"],
         "proximo_passo": row["proximo_passo"],
+        "qualification_summary": qualification_summary,
+        "qualification_completed_at": qualification_completed_at,
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],

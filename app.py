@@ -14,15 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from ai_agent import extract_lead_info, get_ai_response
+from ai_agent import extract_lead_info, generate_qualification_summary, get_ai_response
 from cnpj_lookup import lookup_cnpj
 from database import (
+    append_conversation_message,
     create_active_lead,
     get_all_leads,
+    get_conversation_messages,
     get_lead_by_phone,
     get_lead_by_session,
     init_db,
     is_qualified_lead_data,
+    save_qualification_summary,
     save_lead,
     set_lead_status,
 )
@@ -143,6 +146,11 @@ Na primeira mensagem, apresente-se, apresente brevemente a Imdepa e depois solic
 def get_conversation(session_id: str) -> list[dict[str, str]]:
     if session_id not in conversations:
         conversations[session_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        for message in get_conversation_messages(session_id):
+            if message["role"] in {"user", "assistant"}:
+                conversations[session_id].append(
+                    {"role": message["role"], "content": message["content"]}
+                )
     return conversations[session_id]
 
 
@@ -259,6 +267,17 @@ async def api_get_lead(session_id: str):
     return {"lead": lead}
 
 
+@app.get("/api/leads/{session_id}/history")
+async def api_get_lead_history(session_id: str):
+    lead = get_lead_by_session(session_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead nao encontrado")
+    return {
+        "lead": lead,
+        "messages": get_conversation_messages(session_id),
+    }
+
+
 @app.delete("/api/leads/{lead_id}")
 async def api_delete_lead(lead_id: int):
     from database import delete_lead
@@ -330,7 +349,14 @@ def activate_lead(name: str, phone: str, channel_id: str) -> dict:
 
     history = get_conversation(lead["session_id"])
     if len(history) == 1:
-        history.append({"role": "assistant", "content": get_initial_message()})
+        initial_message = get_initial_message()
+        history.append({"role": "assistant", "content": initial_message})
+        append_conversation_message(
+            lead["session_id"],
+            "assistant",
+            initial_message,
+            {"source": "start"},
+        )
 
     return lead
 
@@ -427,6 +453,21 @@ async def api_gallabox_send(msg: GallaboxSendMessage):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+def close_gallabox_conversation_if_configured(
+    client: Optional[GallaboxClient],
+    conversation_id: Optional[str],
+) -> Optional[dict]:
+    if not conversation_id or not os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip():
+        return None
+
+    gallabox_client = client or get_gallabox_client()
+    try:
+        return gallabox_client.close_conversation(conversation_id)
+    except GallaboxError as exc:
+        print(f"Erro ao encerrar conversa na Gallabox: {exc}")
+        return {"status": "error", "detail": str(exc)}
+
+
 @app.post("/webhook/gallabox")
 async def webhook_gallabox(request: Request):
     return await handle_gallabox_webhook(request)
@@ -479,6 +520,17 @@ async def handle_gallabox_webhook(request: Request):
     session_id = lead["session_id"]
     history = get_conversation(session_id)
     history.append({"role": "user", "content": incoming.text})
+    append_conversation_message(
+        session_id,
+        "user",
+        incoming.text,
+        {
+            "source": "gallabox",
+            "message_id": incoming.message_id,
+            "event_type": incoming.event_type,
+            "from_number": incoming.from_number,
+        },
+    )
 
     cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
     if cnpj_response:
@@ -494,6 +546,16 @@ async def handle_gallabox_webhook(request: Request):
             )
         history.append({"role": "assistant", "content": ai_response})
 
+    append_conversation_message(
+        session_id,
+        "assistant",
+        ai_response,
+        {
+            "source": "ai_sdr",
+            "reply_to_message_id": incoming.message_id,
+        },
+    )
+
     try:
         lead_info = extract_lead_info(history)
         if lead_info and any(v for v in lead_info.values() if v):
@@ -502,13 +564,21 @@ async def handle_gallabox_webhook(request: Request):
         lead_info = None
 
     updated_lead = get_lead_by_session(session_id)
+    qualification_finished = False
+    qualification_summary = None
     if is_qualified_lead_data(updated_lead):
+        qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
+        save_qualification_summary(session_id, qualification_summary)
         set_lead_status(session_id, "INACTIVE")
+        qualification_finished = True
         if updated_lead:
             updated_lead["status"] = "INACTIVE"
+            updated_lead["qualification_summary"] = qualification_summary
 
     provider_response = None
+    close_response = None
     channel_id = incoming.channel_id or lead.get("channel_id")
+    client = None
     if is_gallabox_send_configured(channel_id):
         client = get_gallabox_client()
         try:
@@ -524,12 +594,18 @@ async def handle_gallabox_webhook(request: Request):
     else:
         print(f"Gallabox send not configured. Bot response: {ai_response}")
 
+    if qualification_finished:
+        close_response = close_gallabox_conversation_if_configured(client, incoming.conversation_id)
+
     return {
         "status": "ok",
         "session_id": session_id,
         "response": ai_response,
         "lead_status": updated_lead["status"] if updated_lead else lead["status"],
+        "qualification_finished": qualification_finished,
+        "qualification_summary": qualification_summary,
         "provider_response": provider_response,
+        "close_response": close_response,
     }
 
 

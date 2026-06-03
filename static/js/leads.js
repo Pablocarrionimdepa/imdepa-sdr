@@ -43,6 +43,16 @@
         qualifiedLeadsEl.textContent = allLeads.filter((l) => l.status === 'qualificado').length;
     }
 
+    function getStatusLabel(status) {
+        const labels = {
+            novo: 'Novo',
+            qualificado: 'Qualificado',
+            ACTIVE: 'Active',
+            INACTIVE: 'Inactive',
+        };
+        return labels[status] || status || '-';
+    }
+
     function renderLeads() {
         const search = searchInput.value.toLowerCase().trim();
         const statusVal = statusFilter.value;
@@ -83,7 +93,7 @@
                 <td class="td-segmento">${escapeHtml(lead.segmento || '-')}</td>
                 <td class="td-produtos" title="${escapeHtml(lead.produtos_interesse || '')}">${escapeHtml(lead.produtos_interesse || '-')}</td>
                 <td class="td-volume">${escapeHtml(lead.volume_compra || '-')}</td>
-                <td><span class="status-badge ${lead.status}">${lead.status === 'qualificado' ? 'Qualificado' : 'Novo'}</span></td>
+                <td><span class="status-badge ${lead.status}">${getStatusLabel(lead.status)}</span></td>
                 <td>${formatDate(lead.updated_at)}</td>
                 <td>
                     <div class="action-btns">
@@ -101,9 +111,19 @@
 
     window.viewLead = async function (sessionId) {
         try {
-            const res = await fetch(`/api/leads/${sessionId}`);
+            const res = await fetch(`/api/leads/${sessionId}/history`);
             const data = await res.json();
             const lead = data.lead;
+            const messages = data.messages || [];
+            const historyHtml = messages.length
+                ? messages.map((message) => `
+                    <div class="conversation-message ${message.role}">
+                        <div class="conversation-role">${message.role === 'assistant' ? 'Fernanda' : 'Cliente'}</div>
+                        <div class="conversation-content">${escapeHtml(message.content || '')}</div>
+                        <div class="conversation-date">${formatDate(message.created_at)}</div>
+                    </div>
+                `).join('')
+                : '<div class="detail-value">Nenhuma mensagem registrada.</div>';
 
             modalBody.innerHTML = `
                 <div class="detail-grid">
@@ -157,11 +177,19 @@
                     </div>
                     <div class="detail-item">
                         <span class="detail-label">Status</span>
-                        <div class="detail-value"><span class="status-badge ${lead.status}">${lead.status === 'qualificado' ? 'Qualificado' : 'Novo'}</span></div>
+                        <div class="detail-value"><span class="status-badge ${lead.status}">${getStatusLabel(lead.status)}</span></div>
                     </div>
                     <div class="detail-item">
                         <span class="detail-label">Ultima Atualizacao</span>
                         <div class="detail-value">${formatDate(lead.updated_at)}</div>
+                    </div>
+                    <div class="detail-item full">
+                        <span class="detail-label">Resumo Final da Qualificacao</span>
+                        <div class="detail-value pre-line">${escapeHtml(lead.qualification_summary || '')}</div>
+                    </div>
+                    <div class="detail-item full">
+                        <span class="detail-label">Historico Completo da Conversa</span>
+                        <div class="conversation-history">${historyHtml}</div>
                     </div>
                 </div>
             `;

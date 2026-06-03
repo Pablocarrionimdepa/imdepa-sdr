@@ -450,6 +450,16 @@ body {
     color: var(--green);
 }
 
+.status-badge.ACTIVE {
+    background: var(--blue-bg);
+    color: var(--blue);
+}
+
+.status-badge.INACTIVE {
+    background: var(--bg-primary);
+    color: var(--text-muted);
+}
+
 /* Action Buttons */
 .action-btns {
     display: flex;
@@ -616,6 +626,51 @@ body {
     background: var(--bg-primary);
     border-radius: var(--radius-sm);
     min-height: 38px;
+}
+
+.detail-value.pre-line {
+    white-space: pre-line;
+}
+
+.conversation-history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.conversation-message {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    border-left: 3px solid var(--border-color);
+}
+
+.conversation-message.assistant {
+    border-left-color: var(--imdepa-red);
+}
+
+.conversation-message.user {
+    border-left-color: var(--blue);
+}
+
+.conversation-role {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.conversation-content {
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    white-space: pre-line;
+}
+
+.conversation-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
 }
 
 .detail-value:empty::after {

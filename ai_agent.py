@@ -100,3 +100,77 @@ def extract_lead_info(messages: list) -> dict:
     except (json.JSONDecodeError, Exception) as exc:
         print(f"Erro ao extrair informacoes do lead: {exc}")
         return {}
+
+
+SUMMARY_PROMPT = """Analise o historico completo de qualificacao SDR entre a Fernanda (Imdepa) e o lead.
+Gere um resumo consolidado para a equipe comercial, usando apenas informacoes explicitamente presentes na conversa ou nos dados extraidos.
+
+Adapte o resumo ao roteiro atual da Imdepa. Inclua:
+- Nome da empresa, se identificado
+- CNPJ, se informado
+- Nome do contato
+- E-mail e telefone de contato
+- Segmento da empresa
+- Produtos de interesse, se mencionados
+- Principais dores ou necessidades, se mencionadas
+- Decisores, se mencionados
+- Interesse demonstrado
+- Classificacao do lead
+- Observacoes relevantes e proximo passo sugerido
+
+Classifique o lead como:
+- Qualificado: informou CNPJ, nome, e-mail, telefone e segmento
+- Parcial: demonstrou interesse, mas faltam dados obrigatorios
+- Baixa prioridade: sem aderencia clara ou sem interesse
+
+Retorne em portugues brasileiro, em formato objetivo para leitura comercial. Nao invente informacoes."""
+
+
+def generate_qualification_summary(messages: list, lead_info: dict) -> str:
+    """Gera um resumo comercial final da qualificacao."""
+    conversation_text = ""
+    for msg in messages:
+        if msg["role"] == "user":
+            conversation_text += f"Cliente: {msg['content']}\n"
+        elif msg["role"] == "assistant":
+            conversation_text += f"Fernanda: {msg['content']}\n"
+
+    payload = {
+        "lead_info": lead_info or {},
+        "conversation": conversation_text,
+    }
+
+    try:
+        response = _get_client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SUMMARY_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.2,
+            max_tokens=700,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as exc:
+        print(f"Erro ao gerar resumo da qualificacao: {exc}")
+        return _build_fallback_summary(lead_info)
+
+
+def _build_fallback_summary(lead_info: dict) -> str:
+    lead_info = lead_info or {}
+    fields = [
+        ("Empresa", lead_info.get("empresa")),
+        ("CNPJ", lead_info.get("cnpj")),
+        ("Contato", lead_info.get("contato")),
+        ("E-mail", lead_info.get("email")),
+        ("Telefone", lead_info.get("telefone")),
+        ("Segmento", lead_info.get("segmento")),
+        ("Produtos de interesse", lead_info.get("produtos_interesse")),
+        ("Dores/necessidades", lead_info.get("dores_necessidades")),
+        ("Decisores", lead_info.get("decisores")),
+        ("Proximo passo", lead_info.get("proximo_passo")),
+    ]
+    lines = [f"{label}: {value}" for label, value in fields if str(value or "").strip()]
+    if not lines:
+        return "Resumo indisponivel: nao foram extraidas informacoes suficientes da conversa."
+    return "\n".join(lines)

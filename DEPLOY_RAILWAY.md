@@ -57,6 +57,20 @@ Use `POST /webhook/start` no bloco API Call da Gallabox quando quiser ativar o l
 
 O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 
+Durante a qualificacao, cada mensagem do cliente e cada resposta da IA sao gravadas individualmente. A equipe comercial pode consultar o historico completo no painel de leads ou pela API:
+
+- `GET https://imdepa-sdr-production.up.railway.app/api/leads/{session_id}/history`
+
+Quando a qualificacao termina, o app salva um resumo final em `qualification_summary`, muda o lead para `INACTIVE` e bloqueia novas mensagens desse telefone no bot.
+
+Para encerrar a conversa na Gallabox via API, configure o path correto fornecido pela Gallabox:
+
+```ini
+GALLABOX_CLOSE_CONVERSATION_PATH=/conversations/{conversation_id}/close
+```
+
+Se essa variavel nao estiver configurada, o app apenas finaliza internamente o lead e registra o resumo. O envio da ultima resposta ao cliente continua funcionando normalmente.
+
 ### Validacao temporaria da assinatura Gallabox
 Para confirmar o fluxo completo enquanto a secret e ajustada, configure temporariamente no Railway:
 

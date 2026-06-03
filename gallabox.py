@@ -173,6 +173,42 @@ class GallaboxClient:
         except json.JSONDecodeError:
             return {"ok": True}
 
+    def close_conversation(self, conversation_id: str) -> Optional[dict[str, Any]]:
+        """
+        Encerra/resolved a conversa na Gallabox quando um endpoint for configurado.
+
+        Configure GALLABOX_CLOSE_CONVERSATION_PATH com um path contendo
+        "{conversation_id}", por exemplo:
+        /conversations/{conversation_id}/close
+        """
+        conversation_id = str(conversation_id or "").strip()
+        endpoint_path = os.getenv("GALLABOX_CLOSE_CONVERSATION_PATH", "").strip()
+        if not conversation_id or not endpoint_path:
+            return None
+        if not self.api_base_url:
+            raise GallaboxError("Defina GALLABOX_API_BASE_URL para encerrar conversas.")
+        if "{conversation_id}" not in endpoint_path:
+            raise GallaboxError("GALLABOX_CLOSE_CONVERSATION_PATH deve conter {conversation_id}.")
+
+        url = f"{self.api_base_url}{endpoint_path.format(conversation_id=conversation_id)}"
+        body = json.dumps({"status": "resolved"}).encode("utf-8")
+        req = request.Request(url=url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("apiKey", self.api_key)
+        req.add_header("apiSecret", self.api_secret)
+
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                raw = resp.read().decode("utf-8") or "{}"
+                return json.loads(raw)
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            raise GallaboxError(f"Falha HTTP ao encerrar conversa: {exc.code} {details}") from exc
+        except error.URLError as exc:
+            raise GallaboxError(f"Falha de rede ao encerrar conversa: {exc.reason}") from exc
+        except json.JSONDecodeError:
+            return {"ok": True}
+
 
 def _to_optional_str(value: Any) -> Optional[str]:
     if value is None:
