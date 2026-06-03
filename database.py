@@ -286,6 +286,32 @@ def get_all_leads() -> list:
     return leads
 
 
+def get_db_status() -> dict:
+    """Retorna diagnostico seguro do banco em uso, sem expor segredos."""
+    db_path = _resolve_db_path()
+    resolved_path = os.path.abspath(db_path)
+    status = {
+        "db_path": db_path,
+        "resolved_path": resolved_path,
+        "exists": os.path.exists(db_path),
+        "size_bytes": os.path.getsize(db_path) if os.path.exists(db_path) else 0,
+        "cwd": os.getcwd(),
+        "lead_count": None,
+        "error": "",
+    }
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM leads")
+        status["lead_count"] = cursor.fetchone()[0]
+        conn.close()
+    except Exception as exc:
+        status["error"] = str(exc)
+
+    return status
+
+
 def get_lead_by_session(session_id: str) -> Optional[dict]:
     """Retorna um lead pelo session_id."""
     conn = get_db()

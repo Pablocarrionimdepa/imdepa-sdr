@@ -21,6 +21,7 @@ from database import (
     create_active_lead,
     get_all_leads,
     get_conversation_messages,
+    get_db_status,
     get_lead_by_phone,
     get_lead_by_session,
     init_db,
@@ -257,6 +258,11 @@ async def chat_start():
 @app.get("/api/leads")
 async def api_get_leads():
     return {"leads": get_all_leads()}
+
+
+@app.get("/api/debug/db-status")
+async def api_debug_db_status():
+    return get_db_status()
 
 
 @app.get("/api/leads/{session_id}")
