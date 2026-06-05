@@ -197,6 +197,46 @@ def is_interest_button_text(text: str) -> bool:
     return normalize_trigger_text(text) == normalize_trigger_text(get_interest_button_label())
 
 
+def is_positive_confirmation(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    return normalized in {
+        "sim",
+        "s",
+        "ok",
+        "okay",
+        "claro",
+        "pode",
+        "pode sim",
+        "quero",
+        "aceito",
+        "combinado",
+        "perfeito",
+    }
+
+
+def last_assistant_message(history: list[dict[str, str]]) -> str:
+    for message in reversed(history):
+        if message.get("role") == "assistant":
+            return str(message.get("content", ""))
+    return ""
+
+
+def is_waiting_consultant_confirmation(history: list[dict[str, str]]) -> bool:
+    last_message = normalize_trigger_text(last_assistant_message(history))
+    return "consultor comercial" in last_message and (
+        "posso agendar" in last_message
+        or "agendar" in last_message
+        or "conversa" in last_message
+    )
+
+
+def get_final_handoff_message() -> str:
+    return (
+        "Perfeito! Obrigado pelas informacoes. Sua qualificacao foi concluida e um consultor "
+        "comercial da Imdepa entrara em contato para dar continuidade ao atendimento."
+    )
+
+
 def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
     return bool(
         os.getenv("GALLABOX_API_KEY", "").strip()
@@ -752,7 +792,13 @@ async def handle_gallabox_webhook(request: Request):
     cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
     if cnpj_response:
         ai_response = cnpj_response.response
+        force_finish_qualification = False
+    elif is_waiting_consultant_confirmation(history) and is_positive_confirmation(incoming.text):
+        ai_response = get_final_handoff_message()
+        history.append({"role": "assistant", "content": ai_response})
+        force_finish_qualification = True
     else:
+        force_finish_qualification = False
         try:
             ai_response = get_ai_response(history)
         except Exception as exc:
@@ -810,7 +856,7 @@ async def handle_gallabox_webhook(request: Request):
     qualification_finished = False
     qualification_summary = None
     try:
-        if is_qualified_lead_data(updated_lead):
+        if force_finish_qualification or is_qualified_lead_data(updated_lead):
             qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
             save_qualification_summary(session_id, qualification_summary)
             set_lead_status(session_id, "INACTIVE")
