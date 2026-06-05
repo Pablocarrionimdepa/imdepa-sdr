@@ -450,7 +450,7 @@ def get_lead_by_phone(phone: str) -> Optional[dict]:
     for row in rows:
         row_phone_normalized = row["phone_normalized"] if "phone_normalized" in row.keys() else ""
         row_phone = row["telefone"] if "telefone" in row.keys() else ""
-        if row_phone_normalized == normalized_phone or normalize_phone(row_phone) == normalized_phone:
+        if phones_match(row_phone_normalized, normalized_phone) or phones_match(row_phone, normalized_phone):
             return _serialize_lead(row)
     return None
 
@@ -561,6 +561,49 @@ def _normalize_contact_fields(lead_info: dict) -> dict:
 
 def normalize_phone(phone: str) -> str:
     return re.sub(r"\D+", "", str(phone or ""))
+
+
+def phone_variants(phone: str) -> set[str]:
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return set()
+
+    variants = {normalized}
+    if normalized.startswith("55") and len(normalized) >= 12:
+        local = normalized[2:]
+        variants.add(local)
+    elif len(normalized) in {10, 11}:
+        local = normalized
+        variants.add(f"55{local}")
+    else:
+        local = normalized
+
+    if len(local) == 11 and local[2] == "9":
+        without_mobile_digit = f"{local[:2]}{local[3:]}"
+        variants.add(without_mobile_digit)
+        variants.add(f"55{without_mobile_digit}")
+    elif len(local) == 10:
+        with_mobile_digit = f"{local[:2]}9{local[2:]}"
+        variants.add(with_mobile_digit)
+        variants.add(f"55{with_mobile_digit}")
+
+    return variants
+
+
+def phones_match(left: str, right: str) -> bool:
+    left_variants = phone_variants(left)
+    right_variants = phone_variants(right)
+    if not left_variants or not right_variants:
+        return False
+    if left_variants.intersection(right_variants):
+        return True
+
+    for left_value in left_variants:
+        for right_value in right_variants:
+            shorter, longer = sorted((left_value, right_value), key=len)
+            if len(shorter) >= 10 and longer.endswith(shorter):
+                return True
+    return False
 
 
 def _build_email_phone_summary(email: str, telefone: str) -> str:
