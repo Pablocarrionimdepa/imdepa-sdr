@@ -475,6 +475,40 @@ def set_lead_status(session_id: str, status: str) -> bool:
         conn.close()
 
 
+def repair_finished_lead_statuses() -> dict:
+    """Corrige leads que ja possuem desfecho final, mas permaneceram ACTIVE."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM leads WHERE status = 'ACTIVE'")
+        rows = cursor.fetchall()
+        repaired = []
+        for row in rows:
+            lead = _serialize_lead(row)
+            summary = str(lead.get("qualification_summary") or "").strip()
+            next_step = str(lead.get("proximo_passo") or "").strip().lower()
+            completed_at = lead.get("qualification_completed_at")
+            has_handoff = "consultor" in next_step or "consultor" in summary.lower()
+            if not (completed_at or summary or has_handoff):
+                continue
+
+            final_status = "qualificado" if _is_qualified_lead(lead) else "novo"
+            cursor.execute(
+                "UPDATE leads SET status = ?, updated_at = ? WHERE session_id = ?",
+                (final_status, datetime.now().isoformat(), lead["session_id"]),
+            )
+            repaired.append({"session_id": lead["session_id"], "status": final_status})
+
+        conn.commit()
+        return {"repaired_count": len(repaired), "repaired": repaired}
+    except Exception as exc:
+        conn.rollback()
+        return {"repaired_count": 0, "repaired": [], "error": str(exc)}
+    finally:
+        conn.close()
+
+
 def update_lead(lead_id: int, data: dict) -> bool:
     """Atualiza um lead pelo ID."""
     conn = get_db()

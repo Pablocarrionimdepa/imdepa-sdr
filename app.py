@@ -26,6 +26,7 @@ from database import (
     get_lead_by_session,
     init_db,
     is_qualified_lead_data,
+    repair_finished_lead_statuses,
     save_qualification_summary,
     save_lead,
     set_lead_status,
@@ -303,6 +304,17 @@ def get_yes_no_clarification_message() -> str:
     )
 
 
+def is_consultant_handoff_final_message(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    consultant_markers = (
+        "consultor comercial",
+        "entrara em contato",
+        "entrar em contato",
+        "dara continuidade",
+    )
+    return any(marker in normalized for marker in consultant_markers) and not normalized.endswith("?")
+
+
 def get_final_handoff_message() -> str:
     return (
         "Perfeito! Obrigado pelas informacoes. Sua qualificacao foi concluida e um consultor "
@@ -435,6 +447,11 @@ async def api_debug_gallabox_status():
         "skip_signature_validation": should_skip_gallabox_signature_validation(),
         "interest_button_label": get_interest_button_label(),
     }
+
+
+@app.post("/api/debug/repair-lead-statuses")
+async def api_debug_repair_lead_statuses():
+    return repair_finished_lead_statuses()
 
 
 @app.get("/api/leads/{session_id}")
@@ -910,6 +927,9 @@ async def handle_gallabox_webhook(request: Request):
                 "Pode tentar novamente em alguns instantes?"
             )
         history.append({"role": "assistant", "content": ai_response})
+        if is_consultant_handoff_final_message(ai_response):
+            force_finish_qualification = True
+            consultant_accepted = True
 
     append_conversation_message(
         session_id,
