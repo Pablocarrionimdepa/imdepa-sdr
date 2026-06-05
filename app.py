@@ -265,6 +265,19 @@ async def api_debug_db_status():
     return get_db_status()
 
 
+@app.get("/api/debug/gallabox-status")
+async def api_debug_gallabox_status():
+    return {
+        "api_key_configured": bool(os.getenv("GALLABOX_API_KEY", "").strip()),
+        "api_secret_configured": bool(os.getenv("GALLABOX_API_SECRET", "").strip()),
+        "api_base_url_configured": bool(os.getenv("GALLABOX_API_BASE_URL", "").strip()),
+        "channel_id_configured": bool(os.getenv("GALLABOX_CHANNEL_ID", "").strip()),
+        "messages_path": os.getenv("GALLABOX_MESSAGES_PATH", "/messages/whatsapp"),
+        "webhook_secret_configured": bool(os.getenv("GALLABOX_WEBHOOK_SECRET", "").strip()),
+        "skip_signature_validation": should_skip_gallabox_signature_validation(),
+    }
+
+
 @app.get("/api/leads/{session_id}")
 async def api_get_lead(session_id: str):
     lead = get_lead_by_session(session_id)
@@ -329,11 +342,21 @@ async def webhook_start(request: Request):
         phone=fields.get("phone", ""),
         channel_id=fields.get("channel_id", ""),
     )
+    initial_message = get_initial_message()
+    provider_response = send_gallabox_message_if_configured(
+        to=lead["telefone"],
+        text=initial_message,
+        channel_id=lead.get("channel_id"),
+        recipient_name=lead.get("contato"),
+        conversation_id=fields.get("conversation_id", ""),
+    )
 
     return {
         "status": "ACTIVE",
         "session_id": lead["session_id"],
         "lead": lead,
+        "response": initial_message,
+        "provider_response": provider_response,
     }
 
 
@@ -423,6 +446,17 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
             ),
         )
         or os.getenv("GALLABOX_CHANNEL_ID", ""),
+        "conversation_id": _first_payload_value(
+            payload,
+            (
+                "conversation_id",
+                "conversationId",
+                "data.conversation_id",
+                "data.conversationId",
+                "message.conversation_id",
+                "message.conversationId",
+            ),
+        ),
     }
 
 
@@ -457,6 +491,39 @@ async def api_gallabox_send(msg: GallaboxSendMessage):
         return {"status": "sent", "provider_response": result}
     except GallaboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def send_gallabox_message_if_configured(
+    *,
+    to: str,
+    text: str,
+    channel_id: Optional[str],
+    recipient_name: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+) -> Optional[dict]:
+    if not to or not text:
+        print(f"Gallabox send skipped. to_present={bool(to)}, text_present={bool(text)}")
+        return None
+
+    if not is_gallabox_send_configured(channel_id):
+        print(
+            "Gallabox send not configured. "
+            f"to_present={bool(to)}, channel_id_present={bool(channel_id)}, text={text}"
+        )
+        return None
+
+    client = get_gallabox_client()
+    try:
+        return client.send_text_message(
+            to=to,
+            text=text,
+            channel_id=channel_id,
+            recipient_name=recipient_name,
+            conversation_id=conversation_id,
+        )
+    except GallaboxError as exc:
+        print(f"Erro ao enviar mensagem pela Gallabox: {exc}")
+        return {"status": "error", "detail": str(exc)}
 
 
 def close_gallabox_conversation_if_configured(
@@ -525,12 +592,24 @@ async def handle_gallabox_webhook(request: Request):
 
     incoming = parse_incoming_message(payload)
     if not incoming:
+        print("Gallabox webhook ignored: nao foi possivel extrair texto e telefone do payload.")
         return {"status": "ignored", "reason": "evento sem mensagem de texto"}
+
+    if incoming.event_type:
+        event_type = incoming.event_type.lower()
+        if "received" not in event_type and "incoming" not in event_type:
+            print(f"Gallabox webhook ignored: event_type={incoming.event_type}")
+            return {"status": "ignored", "reason": "evento nao recebido", "event_type": incoming.event_type}
 
     lead = get_lead_by_phone(incoming.from_number)
     if not lead:
+        print(f"Gallabox webhook ignored: lead nao encontrado para telefone {incoming.from_number}.")
         return {"status": "ignored", "reason": "lead nao encontrado pelo telefone"}
     if lead["status"] != "ACTIVE":
+        print(
+            "Gallabox webhook ignored: "
+            f"telefone={incoming.from_number}, lead_status={lead['status']}"
+        )
         return {"status": "ignored", "reason": "lead inativo", "lead_status": lead["status"]}
 
     session_id = lead["session_id"]

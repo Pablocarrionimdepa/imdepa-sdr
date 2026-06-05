@@ -65,6 +65,7 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         or message.get("message")
         or message.get("body")
         or message.get("content")
+        or _deep_first_text(payload, ("body", "text", "content"))
     )
     from_number = (
         whatsapp.get("from")
@@ -72,6 +73,20 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         or message.get("from_number")
         or message.get("phone")
         or message.get("mobile")
+        or contact.get("phone")
+        or contact.get("mobile")
+        or _deep_first_text(
+            payload,
+            (
+                "from_number",
+                "fromNumber",
+                "phone",
+                "mobile",
+                "phoneNumber",
+                "whatsappNumber",
+                "wa_id",
+            ),
+        )
     )
     event_type = payload.get("event") or payload.get("type") or data.get("event")
 
@@ -81,17 +96,28 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
     return IncomingMessage(
         text=str(text).strip(),
         from_number=str(from_number).strip(),
-        channel_id=_to_optional_str(message.get("channelId") or message.get("channel_id")),
-        recipient_name=_to_optional_str(contact.get("name") or message.get("name")),
-        contact_id=_to_optional_str(message.get("contactId") or message.get("contact_id")),
+        channel_id=_to_optional_str(
+            message.get("channelId")
+            or message.get("channel_id")
+            or _deep_first_text(payload, ("channelId", "channel_id"))
+        ),
+        recipient_name=_to_optional_str(contact.get("name") or message.get("name") or _deep_first_text(payload, ("name",))),
+        contact_id=_to_optional_str(
+            message.get("contactId")
+            or message.get("contact_id")
+            or _deep_first_text(payload, ("contactId", "contact_id"))
+        ),
         conversation_id=_to_optional_str(
-            message.get("conversationId") or message.get("conversation_id")
+            message.get("conversationId")
+            or message.get("conversation_id")
+            or _deep_first_text(payload, ("conversationId", "conversation_id"))
         ),
         message_id=_to_optional_str(
             message.get("messageId")
             or message.get("message_id")
             or message.get("id")
             or whatsapp.get("id")
+            or _deep_first_text(payload, ("messageId", "message_id"))
         ),
         event_type=_to_optional_str(event_type),
     )
@@ -263,3 +289,28 @@ def _to_optional_str(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text if text else None
+
+
+def _deep_first_text(value: Any, keys: tuple[str, ...]) -> Optional[str]:
+    if isinstance(value, dict):
+        for key in keys:
+            candidate = value.get(key)
+            if isinstance(candidate, (str, int, float)) and str(candidate).strip():
+                return str(candidate).strip()
+            if isinstance(candidate, dict):
+                nested = _deep_first_text(candidate, keys)
+                if nested:
+                    return nested
+
+        for child in value.values():
+            nested = _deep_first_text(child, keys)
+            if nested:
+                return nested
+
+    if isinstance(value, list):
+        for item in value:
+            nested = _deep_first_text(item, keys)
+            if nested:
+                return nested
+
+    return None

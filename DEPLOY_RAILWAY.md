@@ -55,11 +55,17 @@ Payload esperado em `POST /start`:
 
 Use `POST /webhook/start` no bloco API Call da Gallabox quando quiser ativar o lead antes da conversa. Ele aceita `phone` e `channel_id` no payload, e tambem tenta ler formatos comuns como `contact.phone`, `data.contact.phone`, `message.contact.phone` e `message.channelId`.
 
+Ao receber `POST /webhook/start`, o app ativa o lead e tenta enviar a primeira pergunta da Fernanda pela Gallabox. Se nao houver credenciais/API configuradas, a ativacao ainda ocorre e o log informa que o envio nao esta configurado.
+
 O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 
 Durante a qualificacao, cada mensagem do cliente e cada resposta da IA sao gravadas individualmente. A equipe comercial pode consultar o historico completo no painel de leads ou pela API:
 
 - `GET https://imdepa-sdr-production.up.railway.app/api/leads/{session_id}/history`
+
+Diagnostico seguro da integracao Gallabox:
+
+- `GET https://imdepa-sdr-production.up.railway.app/api/debug/gallabox-status`
 
 Quando a qualificacao termina, o app salva um resumo final em `qualification_summary`, muda o lead para `INACTIVE` e bloqueia novas mensagens desse telefone no bot.
 
