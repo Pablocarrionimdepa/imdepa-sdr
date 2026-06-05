@@ -4,6 +4,7 @@ Aplicacao principal FastAPI
 """
 
 import os
+import re
 import uuid
 from typing import Any, Optional
 
@@ -260,6 +261,9 @@ def is_waiting_consultant_confirmation(history: list[dict[str, str]]) -> bool:
 
 def is_waiting_optional_detail(history: list[dict[str, str]]) -> bool:
     last_message = normalize_trigger_text(last_assistant_message(history))
+    if not has_required_qualification_context(history):
+        return False
+
     optional_markers = (
         "produtos",
         "produto",
@@ -280,6 +284,33 @@ def is_waiting_optional_detail(history: list[dict[str, str]]) -> bool:
     return any(marker in last_message for marker in optional_markers) and not any(
         marker in last_message for marker in consultant_markers
     )
+
+
+def has_required_qualification_context(history: list[dict[str, str]]) -> bool:
+    user_text = normalize_trigger_text(
+        " ".join(str(message.get("content", "")) for message in history if message.get("role") == "user")
+    )
+    has_cnpj = bool(re.search(r"\d{14}", re.sub(r"\D+", "", user_text)))
+    has_email = bool(re.search(r"[^\s@]+@[^\s@]+\.[^\s@]+", user_text))
+    has_phone = bool(re.search(r"\d{10,13}", re.sub(r"\D+", "", user_text)))
+    has_segment = any(segment in user_text for segment in ("agricola", "industrial", "automotivo"))
+    user_messages = [message for message in history if message.get("role") == "user"]
+    has_name_step = len(user_messages) >= 2
+    return has_cnpj and has_email and has_phone and has_segment and has_name_step
+
+
+def is_waiting_cnpj(history: list[dict[str, str]]) -> bool:
+    last_message = normalize_trigger_text(last_assistant_message(history))
+    return "cnpj" in last_message
+
+
+def looks_like_incomplete_cnpj(text: str) -> bool:
+    digits = re.sub(r"\D+", "", str(text or ""))
+    return 0 < len(digits) < 14
+
+
+def get_incomplete_cnpj_message() -> str:
+    return "Esse CNPJ parece incompleto. Pode me enviar os 14 digitos do CNPJ da empresa?"
 
 
 def has_substantive_text(text: str) -> bool:
@@ -893,6 +924,11 @@ async def handle_gallabox_webhook(request: Request):
     cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
     if cnpj_response:
         ai_response = cnpj_response.response
+        force_finish_qualification = False
+        consultant_accepted = None
+    elif is_waiting_cnpj(history) and looks_like_incomplete_cnpj(incoming.text):
+        ai_response = get_incomplete_cnpj_message()
+        history.append({"role": "assistant", "content": ai_response})
         force_finish_qualification = False
         consultant_accepted = None
     elif is_waiting_consultant_confirmation(history) and is_positive_confirmation(incoming.text):
