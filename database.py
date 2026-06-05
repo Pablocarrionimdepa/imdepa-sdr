@@ -627,7 +627,7 @@ def _resolve_next_status(lead_data: Optional[dict], current_status: str = "") ->
     if status == "INACTIVE":
         return "INACTIVE"
     if status == "ACTIVE":
-        return "INACTIVE" if _is_qualified_lead(lead_data) else "ACTIVE"
+        return "ACTIVE"
     return "qualificado" if _is_qualified_lead(lead_data) else "novo"
 
 

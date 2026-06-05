@@ -130,6 +130,16 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 - Dores e necessidades
 - Decisor(es) de compra
 
+## Depois que CNPJ, nome, e-mail, telefone e segmento forem coletados:
+- O lead ja esta qualificado, mas a conversa nao deve encerrar automaticamente.
+- Voce pode fazer uma conversa curta de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
+- Priorize entender produtos de interesse, dor/necessidade principal ou contexto de compra.
+- Depois desse aprofundamento, obrigatoriamente proponha o proximo passo com uma pergunta objetiva de sim/nao:
+  "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+- Se o cliente aceitar, agradeca e informe que um consultor comercial entrara em contato.
+- Se o cliente recusar, agradeca, diga que o atendimento ficou registrado e encerre de forma cordial.
+- Sempre gere um desfecho claro sobre haver ou nao contato de consultor comercial.
+
 ## Regras de conduta:
 - Sempre fale em portugues brasileiro
 - Seja amigavel mas profissional
@@ -214,6 +224,19 @@ def is_positive_confirmation(text: str) -> bool:
     }
 
 
+def is_negative_confirmation(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    return normalized in {
+        "nao",
+        "n",
+        "agora nao",
+        "nao obrigado",
+        "nao precisa",
+        "prefiro nao",
+        "sem interesse",
+    }
+
+
 def last_assistant_message(history: list[dict[str, str]]) -> str:
     for message in reversed(history):
         if message.get("role") == "assistant":
@@ -227,6 +250,9 @@ def is_waiting_consultant_confirmation(history: list[dict[str, str]]) -> bool:
         "posso agendar" in last_message
         or "agendar" in last_message
         or "conversa" in last_message
+        or "entrar em contato" in last_message
+        or "contato com voce" in last_message
+        or "contato com você" in last_message
     )
 
 
@@ -235,6 +261,17 @@ def get_final_handoff_message() -> str:
         "Perfeito! Obrigado pelas informacoes. Sua qualificacao foi concluida e um consultor "
         "comercial da Imdepa entrara em contato para dar continuidade ao atendimento."
     )
+
+
+def get_final_no_handoff_message() -> str:
+    return (
+        "Sem problema. Obrigado pelas informacoes. Vou deixar seu atendimento registrado e, "
+        "se precisar de apoio da Imdepa no futuro, e so chamar."
+    )
+
+
+def get_final_lead_status(lead_data: Optional[dict]) -> str:
+    return "qualificado" if is_qualified_lead_data(lead_data) else "novo"
 
 
 def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
@@ -793,12 +830,20 @@ async def handle_gallabox_webhook(request: Request):
     if cnpj_response:
         ai_response = cnpj_response.response
         force_finish_qualification = False
+        consultant_accepted = None
     elif is_waiting_consultant_confirmation(history) and is_positive_confirmation(incoming.text):
         ai_response = get_final_handoff_message()
         history.append({"role": "assistant", "content": ai_response})
         force_finish_qualification = True
+        consultant_accepted = True
+    elif is_waiting_consultant_confirmation(history) and is_negative_confirmation(incoming.text):
+        ai_response = get_final_no_handoff_message()
+        history.append({"role": "assistant", "content": ai_response})
+        force_finish_qualification = True
+        consultant_accepted = False
     else:
         force_finish_qualification = False
+        consultant_accepted = None
         try:
             ai_response = get_ai_response(history)
         except Exception as exc:
@@ -855,14 +900,16 @@ async def handle_gallabox_webhook(request: Request):
     updated_lead = get_lead_by_session(session_id)
     qualification_finished = False
     qualification_summary = None
+    final_lead_status = updated_lead["status"] if updated_lead else lead["status"]
     try:
-        if force_finish_qualification or is_qualified_lead_data(updated_lead):
+        if force_finish_qualification:
+            final_lead_status = get_final_lead_status(updated_lead)
             qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
             save_qualification_summary(session_id, qualification_summary)
-            set_lead_status(session_id, "INACTIVE")
+            set_lead_status(session_id, final_lead_status)
             qualification_finished = True
             if updated_lead:
-                updated_lead["status"] = "INACTIVE"
+                updated_lead["status"] = final_lead_status
                 updated_lead["qualification_summary"] = qualification_summary
     except Exception as exc:
         print(f"Erro ao finalizar qualificacao: {exc}")
@@ -882,9 +929,10 @@ async def handle_gallabox_webhook(request: Request):
         "status": "ok",
         "session_id": session_id,
         "response": ai_response,
-        "lead_status": updated_lead["status"] if updated_lead else lead["status"],
+        "lead_status": final_lead_status,
         "qualification_finished": qualification_finished,
         "qualification_summary": qualification_summary,
+        "consultant_accepted": consultant_accepted,
         "provider_response": provider_response,
         "close_response": close_response,
     }
