@@ -709,11 +709,9 @@ async def handle_gallabox_webhook(request: Request):
         print("Gallabox webhook ignored: nao foi possivel extrair texto e telefone do payload.")
         return {"status": "ignored", "reason": "evento sem mensagem de texto"}
 
-    if incoming.event_type:
-        event_type = incoming.event_type.lower()
-        if "received" not in event_type and "incoming" not in event_type:
-            print(f"Gallabox webhook ignored: event_type={incoming.event_type}")
-            return {"status": "ignored", "reason": "evento nao recebido", "event_type": incoming.event_type}
+    if incoming.is_outgoing:
+        print(f"Gallabox webhook ignored: mensagem outbound, event_type={incoming.event_type}")
+        return {"status": "ignored", "reason": "mensagem outbound", "event_type": incoming.event_type}
 
     channel_id = incoming.channel_id or os.getenv("GALLABOX_CHANNEL_ID", "")
     if is_interest_button_text(incoming.text):

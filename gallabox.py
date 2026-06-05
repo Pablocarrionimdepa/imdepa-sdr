@@ -46,6 +46,7 @@ class IncomingMessage:
     conversation_id: Optional[str] = None
     message_id: Optional[str] = None
     event_type: Optional[str] = None
+    is_outgoing: bool = False
 
 
 def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]:
@@ -109,6 +110,7 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         )
     )
     event_type = payload.get("event") or payload.get("type") or data.get("event")
+    is_outgoing = _is_outgoing_message(payload)
 
     if not text or not from_number:
         return None
@@ -140,6 +142,7 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
             or _deep_first_text(payload, ("messageId", "message_id"))
         ),
         event_type=_to_optional_str(event_type),
+        is_outgoing=is_outgoing,
     )
 
 
@@ -322,6 +325,30 @@ def _nested_text(value: Any, path: tuple[str, ...]) -> Optional[str]:
     return None
 
 
+def _is_outgoing_message(payload: dict[str, Any]) -> bool:
+    outgoing_values = {
+        "outgoing",
+        "sent",
+        "delivered",
+        "read",
+        "failed",
+        "template_sent",
+    }
+    for key in ("direction", "messageDirection", "status", "messageStatus"):
+        value = _deep_first_text(payload, (key,))
+        if value and value.strip().lower() in outgoing_values:
+            return True
+
+    for key in ("fromMe", "from_me", "isFromMe", "outgoing"):
+        value = _deep_first_value(payload, key)
+        if isinstance(value, bool) and value:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"true", "1", "yes"}:
+            return True
+
+    return False
+
+
 def _deep_first_text(value: Any, keys: tuple[str, ...]) -> Optional[str]:
     if isinstance(value, dict):
         for key in keys:
@@ -342,6 +369,24 @@ def _deep_first_text(value: Any, keys: tuple[str, ...]) -> Optional[str]:
         for item in value:
             nested = _deep_first_text(item, keys)
             if nested:
+                return nested
+
+    return None
+
+
+def _deep_first_value(value: Any, key: str) -> Any:
+    if isinstance(value, dict):
+        if key in value:
+            return value[key]
+        for child in value.values():
+            nested = _deep_first_value(child, key)
+            if nested is not None:
+                return nested
+
+    if isinstance(value, list):
+        for item in value:
+            nested = _deep_first_value(item, key)
+            if nested is not None:
                 return nested
 
     return None
