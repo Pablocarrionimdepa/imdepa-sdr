@@ -775,25 +775,6 @@ async def handle_gallabox_webhook(request: Request):
         },
     )
 
-    try:
-        lead_info = extract_lead_info(history)
-        if lead_info and any(v for v in lead_info.values() if v):
-            save_lead(session_id, lead_info)
-    except Exception:
-        lead_info = None
-
-    updated_lead = get_lead_by_session(session_id)
-    qualification_finished = False
-    qualification_summary = None
-    if is_qualified_lead_data(updated_lead):
-        qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
-        save_qualification_summary(session_id, qualification_summary)
-        set_lead_status(session_id, "INACTIVE")
-        qualification_finished = True
-        if updated_lead:
-            updated_lead["status"] = "INACTIVE"
-            updated_lead["qualification_summary"] = qualification_summary
-
     provider_response = None
     close_response = None
     channel_id = incoming.channel_id or lead.get("channel_id")
@@ -809,17 +790,49 @@ async def handle_gallabox_webhook(request: Request):
                 conversation_id=incoming.conversation_id,
             )
         except GallaboxError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            print(f"Erro ao enviar resposta pela Gallabox: {exc}")
+            return {
+                "status": "send_failed",
+                "session_id": session_id,
+                "response": ai_response,
+                "detail": str(exc),
+            }
     else:
         print(f"Gallabox send not configured. Bot response: {ai_response}")
 
+    try:
+        lead_info = extract_lead_info(history)
+        if lead_info and any(v for v in lead_info.values() if v):
+            save_lead(session_id, lead_info)
+    except Exception as exc:
+        print(f"Erro ao extrair/salvar informacoes do lead: {exc}")
+        lead_info = None
+
+    updated_lead = get_lead_by_session(session_id)
+    qualification_finished = False
+    qualification_summary = None
+    try:
+        if is_qualified_lead_data(updated_lead):
+            qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
+            save_qualification_summary(session_id, qualification_summary)
+            set_lead_status(session_id, "INACTIVE")
+            qualification_finished = True
+            if updated_lead:
+                updated_lead["status"] = "INACTIVE"
+                updated_lead["qualification_summary"] = qualification_summary
+    except Exception as exc:
+        print(f"Erro ao finalizar qualificacao: {exc}")
+
     if qualification_finished:
-        close_response = close_gallabox_conversation_if_configured(
-            client,
-            incoming.conversation_id,
-            incoming.from_number,
-            channel_id,
-        )
+        try:
+            close_response = close_gallabox_conversation_if_configured(
+                client,
+                incoming.conversation_id,
+                incoming.from_number,
+                channel_id,
+            )
+        except Exception as exc:
+            print(f"Erro ao chamar fechamento da Gallabox: {exc}")
 
     return {
         "status": "ok",
