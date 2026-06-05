@@ -68,6 +68,11 @@ class StartLeadRequest(BaseModel):
     name: str
     phone: str
     channel_id: str
+    trigger_text: Optional[str] = None
+
+
+class InterestClickTestRequest(StartLeadRequest):
+    conversation_id: Optional[str] = None
 
 
 conversations: dict[str, list[dict[str, str]]] = {}
@@ -161,6 +166,35 @@ def get_initial_message() -> str:
         "distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. "
         "Para iniciar seu atendimento, me informe o CNPJ da empresa."
     )
+
+
+def get_interest_button_label() -> str:
+    return os.getenv("GALLABOX_INTEREST_BUTTON_LABEL", "Tenho interesse").strip() or "Tenho interesse"
+
+
+def normalize_trigger_text(text: str) -> str:
+    normalized = str(text or "").strip().lower()
+    replacements = {
+        "á": "a",
+        "à": "a",
+        "ã": "a",
+        "â": "a",
+        "é": "e",
+        "ê": "e",
+        "í": "i",
+        "ó": "o",
+        "õ": "o",
+        "ô": "o",
+        "ú": "u",
+        "ç": "c",
+    }
+    for source, target in replacements.items():
+        normalized = normalized.replace(source, target)
+    return " ".join(normalized.split())
+
+
+def is_interest_button_text(text: str) -> bool:
+    return normalize_trigger_text(text) == normalize_trigger_text(get_interest_button_label())
 
 
 def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
@@ -275,6 +309,7 @@ async def api_debug_gallabox_status():
         "messages_path": os.getenv("GALLABOX_MESSAGES_PATH", "/messages/whatsapp"),
         "webhook_secret_configured": bool(os.getenv("GALLABOX_WEBHOOK_SECRET", "").strip()),
         "skip_signature_validation": should_skip_gallabox_signature_validation(),
+        "interest_button_label": get_interest_button_label(),
     }
 
 
@@ -314,17 +349,20 @@ async def health():
 
 @app.post("/start")
 async def start_lead(payload: StartLeadRequest):
-    lead = activate_lead(
+    if not is_interest_button_text(payload.trigger_text or ""):
+        return {
+            "status": "ignored",
+            "reason": "gatilho de interesse nao identificado",
+            "expected_trigger": get_interest_button_label(),
+            "received_trigger": payload.trigger_text or "",
+        }
+
+    return start_fernanda_from_interest_click(
         name=payload.name,
         phone=payload.phone,
         channel_id=payload.channel_id,
+        source="start",
     )
-
-    return {
-        "status": "ACTIVE",
-        "session_id": lead["session_id"],
-        "lead": lead,
-    }
 
 
 @app.post("/webhook/start")
@@ -337,27 +375,37 @@ async def webhook_start(request: Request):
     print(f"Gallabox start webhook body: {payload}")
 
     fields = extract_start_payload(payload)
-    lead = activate_lead(
+    trigger_text = fields.get("trigger_text", "")
+    if not is_interest_button_text(trigger_text):
+        print(
+            "Gallabox start webhook ignored: "
+            f"trigger_text={trigger_text!r}, expected={get_interest_button_label()!r}"
+        )
+        return {
+            "status": "ignored",
+            "reason": "gatilho de interesse nao identificado",
+            "expected_trigger": get_interest_button_label(),
+            "received_trigger": trigger_text,
+        }
+
+    return start_fernanda_from_interest_click(
         name=fields.get("name", ""),
         phone=fields.get("phone", ""),
         channel_id=fields.get("channel_id", ""),
-    )
-    initial_message = get_initial_message()
-    provider_response = send_gallabox_message_if_configured(
-        to=lead["telefone"],
-        text=initial_message,
-        channel_id=lead.get("channel_id"),
-        recipient_name=lead.get("contato"),
         conversation_id=fields.get("conversation_id", ""),
+        source="webhook/start",
     )
 
-    return {
-        "status": "ACTIVE",
-        "session_id": lead["session_id"],
-        "lead": lead,
-        "response": initial_message,
-        "provider_response": provider_response,
-    }
+
+@app.post("/api/test/interest-click")
+async def api_test_interest_click(payload: InterestClickTestRequest):
+    return start_fernanda_from_interest_click(
+        name=payload.name,
+        phone=payload.phone,
+        channel_id=payload.channel_id,
+        conversation_id=payload.conversation_id,
+        source="api/test/interest-click",
+    )
 
 
 def activate_lead(name: str, phone: str, channel_id: str) -> dict:
@@ -388,6 +436,39 @@ def activate_lead(name: str, phone: str, channel_id: str) -> dict:
         )
 
     return lead
+
+
+def start_fernanda_from_interest_click(
+    *,
+    name: str,
+    phone: str,
+    channel_id: str,
+    conversation_id: Optional[str] = None,
+    source: str,
+) -> dict:
+    lead = activate_lead(name=name, phone=phone, channel_id=channel_id)
+    initial_message = get_initial_message()
+    provider_response = send_gallabox_message_if_configured(
+        to=lead["telefone"],
+        text=initial_message,
+        channel_id=lead.get("channel_id"),
+        recipient_name=lead.get("contato"),
+        conversation_id=conversation_id,
+    )
+
+    print(
+        "Fernanda ativada por clique de interesse: "
+        f"source={source}, phone={lead['telefone']}, session_id={lead['session_id']}"
+    )
+
+    return {
+        "status": "ACTIVE",
+        "session_id": lead["session_id"],
+        "lead": lead,
+        "response": initial_message,
+        "provider_response": provider_response,
+        "trigger": get_interest_button_label(),
+    }
 
 
 def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
@@ -455,6 +536,39 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
                 "data.conversationId",
                 "message.conversation_id",
                 "message.conversationId",
+            ),
+        ),
+        "trigger_text": _first_payload_value(
+            payload,
+            (
+                "trigger_text",
+                "button_text",
+                "button_payload",
+                "button.text",
+                "button.title",
+                "button.payload",
+                "interactive.button_reply.title",
+                "interactive.button_reply.id",
+                "data.trigger_text",
+                "data.button_text",
+                "data.button_payload",
+                "data.button.text",
+                "data.button.title",
+                "data.button.payload",
+                "data.interactive.button_reply.title",
+                "data.interactive.button_reply.id",
+                "message.trigger_text",
+                "message.button_text",
+                "message.button_payload",
+                "message.button.text",
+                "message.button.title",
+                "message.button.payload",
+                "message.interactive.button_reply.title",
+                "message.interactive.button_reply.id",
+                "message.text",
+                "message.body",
+                "text",
+                "body",
             ),
         ),
     }
@@ -600,6 +714,16 @@ async def handle_gallabox_webhook(request: Request):
         if "received" not in event_type and "incoming" not in event_type:
             print(f"Gallabox webhook ignored: event_type={incoming.event_type}")
             return {"status": "ignored", "reason": "evento nao recebido", "event_type": incoming.event_type}
+
+    channel_id = incoming.channel_id or os.getenv("GALLABOX_CHANNEL_ID", "")
+    if is_interest_button_text(incoming.text):
+        return start_fernanda_from_interest_click(
+            name=incoming.recipient_name or incoming.from_number,
+            phone=incoming.from_number,
+            channel_id=channel_id,
+            conversation_id=incoming.conversation_id,
+            source="webhook/gallabox",
+        )
 
     lead = get_lead_by_phone(incoming.from_number)
     if not lead:

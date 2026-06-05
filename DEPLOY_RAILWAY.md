@@ -49,13 +49,34 @@ Payload esperado em `POST /start`:
 {
   "name": "Nome do lead",
   "phone": "5511999999999",
-  "channel_id": "id-do-canal-gallabox"
+  "channel_id": "id-do-canal-gallabox",
+  "trigger_text": "Tenho interesse"
 }
 ```
 
 Use `POST /webhook/start` no bloco API Call da Gallabox quando quiser ativar o lead antes da conversa. Ele aceita `phone` e `channel_id` no payload, e tambem tenta ler formatos comuns como `contact.phone`, `data.contact.phone`, `message.contact.phone` e `message.channelId`.
 
-Ao receber `POST /webhook/start`, o app ativa o lead e tenta enviar a primeira pergunta da Fernanda pela Gallabox. Se nao houver credenciais/API configuradas, a ativacao ainda ocorre e o log informa que o envio nao esta configurado.
+Ao receber `POST /webhook/start`, o app so ativa o lead se identificar o gatilho `Tenho interesse` no payload (`trigger_text`, `button_text`, `button_payload`, `message.text`, etc.). Depois ativa o lead e tenta enviar a primeira pergunta da Fernanda pela Gallabox. Se nao houver credenciais/API configuradas, a ativacao ainda ocorre e o log informa que o envio nao esta configurado.
+
+Para alterar o texto do botao esperado:
+
+```ini
+GALLABOX_INTEREST_BUTTON_LABEL=Tenho interesse
+```
+
+Endpoint temporario de teste para simular o clique no botao `Tenho interesse`:
+
+- `POST https://imdepa-sdr-production.up.railway.app/api/test/interest-click`
+
+Payload de teste:
+
+```json
+{
+  "name": "Cliente Teste",
+  "phone": "5511999999999",
+  "channel_id": "id-do-canal-gallabox"
+}
+```
 
 O `POST /webhook/gallabox` registra o body recebido no log da aplicacao e so processa mensagens de leads com status `ACTIVE`. Quando a qualificacao termina, o status muda para `INACTIVE`.
 

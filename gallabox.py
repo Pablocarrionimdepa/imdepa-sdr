@@ -61,11 +61,31 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
 
     text = (
         whatsapp_text.get("body")
+        or _nested_text(message, ("button", "text"))
+        or _nested_text(message, ("button", "title"))
+        or _nested_text(message, ("button", "payload"))
+        or _nested_text(message, ("interactive", "button_reply", "title"))
+        or _nested_text(message, ("interactive", "button_reply", "id"))
+        or _nested_text(whatsapp, ("button", "text"))
+        or _nested_text(whatsapp, ("button", "title"))
+        or _nested_text(whatsapp, ("button", "payload"))
+        or _nested_text(whatsapp, ("interactive", "button_reply", "title"))
+        or _nested_text(whatsapp, ("interactive", "button_reply", "id"))
         or message.get("text")
         or message.get("message")
         or message.get("body")
         or message.get("content")
-        or _deep_first_text(payload, ("body", "text", "content"))
+        or _deep_first_text(
+            payload,
+            (
+                "button_text",
+                "buttonPayload",
+                "button_payload",
+                "body",
+                "text",
+                "content",
+            ),
+        )
     )
     from_number = (
         whatsapp.get("from")
@@ -289,6 +309,17 @@ def _to_optional_str(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text if text else None
+
+
+def _nested_text(value: Any, path: tuple[str, ...]) -> Optional[str]:
+    current = value
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    if isinstance(current, (str, int, float)) and str(current).strip():
+        return str(current).strip()
+    return None
 
 
 def _deep_first_text(value: Any, keys: tuple[str, ...]) -> Optional[str]:
