@@ -5,6 +5,7 @@ Aplicacao principal FastAPI
 
 import os
 import re
+import unicodedata
 import uuid
 from typing import Any, Optional
 
@@ -126,6 +127,14 @@ Com CNPJ, seu nome, e-mail, telefone e segmento, o lead ja deve ser tratado como
 Nao transforme isso em formulario: conduza de forma natural, mas respeite essa ordem.
 Nao peca outras informacoes antes de concluir essa sequencia.
 
+## Quando a resposta vier fora do esperado:
+- Nao avance para a proxima etapa se o dado obrigatorio estiver ausente ou em formato invalido.
+- Explique de forma simples por que precisa daquele dado e peca novamente somente a informacao correta.
+- Se o cliente mandar texto livre, pergunta, saudacao ou resposta ambigua, acolha brevemente e redirecione para o dado atual.
+- CNPJ precisa ter 14 digitos validos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e numero.
+- Para o segmento, tente enquadrar em Agricola, Industrial, Automotivo ou Revenda. Se o cliente responder outro segmento, confirme se existe aderencia a uma dessas areas antes de seguir.
+- Reforce que esses dados servem para que um consultor comercial da Imdepa consiga entrar em contato corretamente.
+
 ## Informacoes opcionais (somente depois do atendimento inicial, se fizer sentido):
 - Nome da empresa
 - Principais produtos de interesse
@@ -137,6 +146,7 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 - Voce pode fazer uma conversa curta de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
 - Priorize entender produtos de interesse, dor/necessidade principal ou contexto de compra.
 - Se o cliente responder uma pergunta opcional com texto livre, aceite a resposta como informacao valida; nao exija formato especifico.
+- Se a resposta opcional ja trouxer contexto suficiente, proponha o contato do consultor. Se ainda faltar contexto comercial, faca apenas mais uma pergunta objetiva.
 - Depois desse aprofundamento, obrigatoriamente proponha o proximo passo com uma pergunta objetiva de sim/nao:
   "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
 - Se o cliente aceitar, agradeca e informe que um consultor comercial entrara em contato.
@@ -187,6 +197,11 @@ def get_interest_button_label() -> str:
 
 def normalize_trigger_text(text: str) -> str:
     normalized = str(text or "").strip().lower()
+    normalized = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", normalized)
+        if not unicodedata.combining(char)
+    )
     replacements = {
         "á": "a",
         "à": "a",
@@ -240,6 +255,49 @@ def is_negative_confirmation(text: str) -> bool:
     }
 
 
+def get_text_digits(text: str) -> str:
+    return re.sub(r"\D+", "", str(text or ""))
+
+
+def has_valid_email(text: str) -> bool:
+    return bool(re.search(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", str(text or "")))
+
+
+def has_valid_phone(text: str) -> bool:
+    digits = get_text_digits(text)
+    return 10 <= len(digits) <= 13
+
+
+def has_valid_contact_name(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    if normalized in {"oi", "ola", "sim", "nao", "ok", "teste"}:
+        return False
+    letters = re.sub(r"[^a-zA-Z]", "", normalized)
+    return len(letters) >= 2
+
+
+def has_valid_segment(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    return any(
+        segment in normalized
+        for segment in ("agricola", "industrial", "automotivo", "revenda")
+    )
+
+
+def is_valid_cnpj_digits(digits: str) -> bool:
+    if len(digits) != 14 or len(set(digits)) == 1:
+        return False
+
+    def calculate_digit(base: str, weights: tuple[int, ...]) -> str:
+        total = sum(int(number) * weight for number, weight in zip(base, weights))
+        remainder = total % 11
+        return "0" if remainder < 2 else str(11 - remainder)
+
+    first_digit = calculate_digit(digits[:12], (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))
+    second_digit = calculate_digit(digits[:13], (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))
+    return digits[-2:] == first_digit + second_digit
+
+
 def last_assistant_message(history: list[dict[str, str]]) -> str:
     for message in reversed(history):
         if message.get("role") == "assistant":
@@ -287,16 +345,8 @@ def is_waiting_optional_detail(history: list[dict[str, str]]) -> bool:
 
 
 def has_required_qualification_context(history: list[dict[str, str]]) -> bool:
-    user_text = normalize_trigger_text(
-        " ".join(str(message.get("content", "")) for message in history if message.get("role") == "user")
-    )
-    has_cnpj = bool(re.search(r"\d{14}", re.sub(r"\D+", "", user_text)))
-    has_email = bool(re.search(r"[^\s@]+@[^\s@]+\.[^\s@]+", user_text))
-    has_phone = bool(re.search(r"\d{10,13}", re.sub(r"\D+", "", user_text)))
-    has_segment = any(segment in user_text for segment in ("agricola", "industrial", "automotivo"))
-    user_messages = [message for message in history if message.get("role") == "user"]
-    has_name_step = len(user_messages) >= 2
-    return has_cnpj and has_email and has_phone and has_segment and has_name_step
+    answers = extract_required_answers_from_history(history)
+    return all(answers.values())
 
 
 def is_waiting_cnpj(history: list[dict[str, str]]) -> bool:
@@ -305,7 +355,7 @@ def is_waiting_cnpj(history: list[dict[str, str]]) -> bool:
 
 
 def looks_like_incomplete_cnpj(text: str) -> bool:
-    digits = re.sub(r"\D+", "", str(text or ""))
+    digits = get_text_digits(text)
     return 0 < len(digits) < 14
 
 
@@ -364,6 +414,230 @@ def get_final_lead_status(lead_data: Optional[dict]) -> str:
     return "qualificado" if is_qualified_lead_data(lead_data) else "novo"
 
 
+def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
+    normalized = normalize_trigger_text(text)
+    if not normalized:
+        return None
+    if "consultor comercial" in normalized and (
+        "entrar em contato" in normalized
+        or "contato com voce" in normalized
+        or "agendar" in normalized
+        or "conversa" in normalized
+    ):
+        return "consultant_confirmation"
+    if "cnpj" in normalized:
+        return "cnpj"
+    if "e-mail" in normalized or "email" in normalized:
+        return "email"
+    if "telefone" in normalized or "whatsapp" in normalized:
+        return "phone"
+    if "segmento" in normalized:
+        return "segment"
+    if (
+        "seu nome" in normalized
+        or "nome para contato" in normalized
+        or "nome do contato" in normalized
+        or ("me informe" in normalized and "nome" in normalized)
+    ):
+        return "name"
+    if is_optional_question_text(normalized):
+        return "optional_detail"
+    return None
+
+
+def get_expected_input_step(history: list[dict[str, str]]) -> Optional[str]:
+    return get_expected_step_from_assistant_text(last_assistant_message(history))
+
+
+def is_optional_question_text(normalized_text: str) -> bool:
+    optional_markers = (
+        "produtos",
+        "produto",
+        "interesse",
+        "necessidade",
+        "necessidades",
+        "utiliza",
+        "precisa",
+        "dor",
+        "dores",
+        "decisor",
+        "compra",
+    )
+    consultant_markers = (
+        "consultor comercial",
+        "entrar em contato",
+        "contato com voce",
+    )
+    return any(marker in normalized_text for marker in optional_markers) and not any(
+        marker in normalized_text for marker in consultant_markers
+    )
+
+
+def extract_required_answers_from_history(history: list[dict[str, str]]) -> dict[str, bool]:
+    answers = {
+        "cnpj": False,
+        "name": False,
+        "email": False,
+        "phone": False,
+        "segment": False,
+    }
+    expected_step = None
+    for message in history:
+        role = message.get("role")
+        content = str(message.get("content", ""))
+        if role == "assistant":
+            expected_step = get_expected_step_from_assistant_text(content)
+            continue
+        if role != "user" or not expected_step:
+            continue
+
+        if expected_step == "cnpj":
+            digits = get_text_digits(content)
+            answers["cnpj"] = len(digits) == 14 and is_valid_cnpj_digits(digits)
+        elif expected_step == "name":
+            answers["name"] = has_valid_contact_name(content)
+        elif expected_step == "email":
+            answers["email"] = has_valid_email(content)
+        elif expected_step == "phone":
+            answers["phone"] = has_valid_phone(content)
+        elif expected_step == "segment":
+            answers["segment"] = has_valid_segment(content)
+
+    return answers
+
+
+def count_optional_questions(history: list[dict[str, str]]) -> int:
+    return sum(
+        1
+        for message in history
+        if message.get("role") == "assistant"
+        and is_optional_question_text(normalize_trigger_text(str(message.get("content", ""))))
+    )
+
+
+def build_guided_history(
+    history: list[dict[str, str]],
+    guidance: str,
+) -> list[dict[str, str]]:
+    guided_history = [dict(message) for message in history]
+    for message in guided_history:
+        if message.get("role") == "system":
+            message["content"] = (
+                f"{message.get('content', '')}\n\n"
+                "## Orientacao operacional desta rodada\n"
+                f"{guidance}"
+            )
+            return guided_history
+    return [{"role": "system", "content": guidance}, *guided_history]
+
+
+def build_runtime_guidance(
+    history: list[dict[str, str]],
+    user_text: str,
+) -> tuple[Optional[str], bool, Optional[bool]]:
+    expected_step = get_expected_input_step(history)
+    normalized = normalize_trigger_text(user_text)
+
+    if expected_step == "cnpj":
+        digits = get_text_digits(user_text)
+        if len(digits) != 14:
+            return (
+                "O cliente ainda nao informou um CNPJ completo. Responda com naturalidade, "
+                "explique que precisa dos 14 digitos do CNPJ para identificar a empresa e peca novamente apenas o CNPJ.",
+                False,
+                None,
+            )
+        if not is_valid_cnpj_digits(digits):
+            return (
+                "O cliente informou um CNPJ com 14 digitos, mas ele nao parece valido. "
+                "Responda de forma educada, diga que o CNPJ parece incorreto e peca para conferir e enviar novamente.",
+                False,
+                None,
+            )
+
+    if expected_step == "name" and not has_valid_contact_name(user_text):
+        return (
+            "A resposta nao parece conter o nome do contato. Acolha brevemente e peca novamente o nome "
+            "da pessoa para que o consultor comercial saiba com quem falar.",
+            False,
+            None,
+        )
+
+    if expected_step == "email" and not has_valid_email(user_text):
+        return (
+            "A resposta nao contem um e-mail valido. Explique rapidamente que o e-mail e necessario para contato "
+            "e peca que o cliente envie um e-mail em formato valido.",
+            False,
+            None,
+        )
+
+    if expected_step == "phone" and not has_valid_phone(user_text):
+        return (
+            "A resposta nao contem um telefone valido com DDD. Explique que precisa do melhor telefone para contato "
+            "do consultor comercial e peca novamente o numero com DDD.",
+            False,
+            None,
+        )
+
+    if expected_step == "segment" and not has_valid_segment(user_text):
+        return (
+            "A resposta nao corresponde claramente aos segmentos Agricola, Industrial, Automotivo ou Revenda. "
+            "Responda com naturalidade, explique que a Imdepa atua principalmente nesses segmentos e peca para o cliente "
+            "indicar qual deles mais se aproxima da empresa. Nao avance ate ter esse enquadramento.",
+            False,
+            None,
+        )
+
+    if expected_step == "consultant_confirmation":
+        if is_positive_confirmation(user_text):
+            return (
+                "O cliente autorizou o contato do consultor. Agradeca, informe que a qualificacao foi concluida "
+                "e que um consultor comercial da Imdepa entrara em contato para dar continuidade.",
+                True,
+                True,
+            )
+        if is_negative_confirmation(user_text):
+            return (
+                "O cliente nao autorizou o contato do consultor neste momento. Agradeca, informe que o atendimento "
+                "ficara registrado e encerre de forma cordial, sem insistir.",
+                True,
+                False,
+            )
+        return (
+            "O cliente respondeu de forma ambigua sobre autorizar o contato do consultor. Peca uma confirmacao objetiva "
+            "em sim ou nao, mantendo o tom cordial.",
+            False,
+            None,
+        )
+
+    if expected_step == "optional_detail" and has_substantive_text(user_text):
+        optional_questions = count_optional_questions(history)
+        if optional_questions >= 2:
+            return (
+                "O cliente respondeu a etapa de aprofundamento. Aceite a informacao como valida, conecte brevemente "
+                "com o atendimento da Imdepa e proponha o contato do consultor comercial com uma pergunta objetiva de sim ou nao.",
+                False,
+                None,
+            )
+        return (
+            "O cliente respondeu uma pergunta opcional com texto livre. Use essa informacao na conversa. "
+            "Se ela ja for suficiente para o comercial, proponha o contato do consultor com pergunta de sim ou nao; "
+            "se ainda faltar contexto, faca apenas mais uma pergunta objetiva de aprofundamento.",
+            False,
+            None,
+        )
+
+    if expected_step == "optional_detail" and normalized in {"sim", "s", "ok"}:
+        return (
+            "O cliente respondeu de forma curta a uma pergunta opcional. Transforme isso em uma pergunta objetiva "
+            "para coletar o detalhe comercial que falta, sem encerrar a qualificacao ainda.",
+            False,
+            None,
+        )
+
+    return None, False, None
+
+
 def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
     return bool(
         os.getenv("GALLABOX_API_KEY", "").strip()
@@ -419,9 +693,22 @@ async def chat(msg: ChatMessage):
     history = get_conversation(session_id)
     history.append({"role": "user", "content": msg.message})
 
-    cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=msg.message, history=history)
-    if cnpj_response:
-        return cnpj_response
+    runtime_guidance, _, _ = build_runtime_guidance(history, msg.message)
+    if runtime_guidance:
+        try:
+            ai_response = get_ai_response(build_guided_history(history, runtime_guidance))
+        except Exception as exc:
+            print(f"Erro ao comunicar com a IA: {exc}")
+            ai_response = (
+                "Estou com uma instabilidade momentanea no atendimento. "
+                "Pode tentar novamente em alguns instantes?"
+            )
+        history.append({"role": "assistant", "content": ai_response})
+        return ChatResponse(session_id=session_id, response=ai_response, lead_data=None)
+    else:
+        cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=msg.message, history=history)
+        if cnpj_response:
+            return cnpj_response
 
     try:
         ai_response = get_ai_response(history)
@@ -921,51 +1208,46 @@ async def handle_gallabox_webhook(request: Request):
         },
     )
 
-    cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
-    if cnpj_response:
-        ai_response = cnpj_response.response
-        force_finish_qualification = False
-        consultant_accepted = None
-    elif is_waiting_cnpj(history) and looks_like_incomplete_cnpj(incoming.text):
-        ai_response = get_incomplete_cnpj_message()
-        history.append({"role": "assistant", "content": ai_response})
-        force_finish_qualification = False
-        consultant_accepted = None
-    elif is_waiting_consultant_confirmation(history) and is_positive_confirmation(incoming.text):
-        ai_response = get_final_handoff_message()
-        history.append({"role": "assistant", "content": ai_response})
-        force_finish_qualification = True
-        consultant_accepted = True
-    elif is_waiting_consultant_confirmation(history) and is_negative_confirmation(incoming.text):
-        ai_response = get_final_no_handoff_message()
-        history.append({"role": "assistant", "content": ai_response})
-        force_finish_qualification = True
-        consultant_accepted = False
-    elif is_waiting_consultant_confirmation(history):
-        ai_response = get_yes_no_clarification_message()
-        history.append({"role": "assistant", "content": ai_response})
-        force_finish_qualification = False
-        consultant_accepted = None
-    elif is_waiting_optional_detail(history) and has_substantive_text(incoming.text):
-        ai_response = get_consultant_offer_message(incoming.text)
-        history.append({"role": "assistant", "content": ai_response})
-        force_finish_qualification = False
-        consultant_accepted = None
-    else:
-        force_finish_qualification = False
-        consultant_accepted = None
+    runtime_guidance, force_finish_qualification, consultant_accepted = build_runtime_guidance(
+        history,
+        incoming.text,
+    )
+    if runtime_guidance:
         try:
-            ai_response = get_ai_response(history)
+            ai_response = get_ai_response(build_guided_history(history, runtime_guidance))
         except Exception as exc:
             print(f"Erro ao gerar resposta da IA: {exc}")
-            ai_response = (
-                "Estou com uma instabilidade momentanea no atendimento. "
-                "Pode tentar novamente em alguns instantes?"
-            )
+            if force_finish_qualification and consultant_accepted is True:
+                ai_response = get_final_handoff_message()
+            elif force_finish_qualification and consultant_accepted is False:
+                ai_response = get_final_no_handoff_message()
+            else:
+                ai_response = (
+                    "Estou com uma instabilidade momentanea no atendimento. "
+                    "Pode tentar novamente em alguns instantes?"
+                )
         history.append({"role": "assistant", "content": ai_response})
-        if is_consultant_handoff_final_message(ai_response):
-            force_finish_qualification = True
-            consultant_accepted = True
+    else:
+        cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
+        if cnpj_response:
+            ai_response = cnpj_response.response
+            force_finish_qualification = False
+            consultant_accepted = None
+        else:
+            force_finish_qualification = False
+            consultant_accepted = None
+            try:
+                ai_response = get_ai_response(history)
+            except Exception as exc:
+                print(f"Erro ao gerar resposta da IA: {exc}")
+                ai_response = (
+                    "Estou com uma instabilidade momentanea no atendimento. "
+                    "Pode tentar novamente em alguns instantes?"
+                )
+            history.append({"role": "assistant", "content": ai_response})
+            if is_consultant_handoff_final_message(ai_response):
+                force_finish_qualification = True
+                consultant_accepted = True
 
     append_conversation_message(
         session_id,
@@ -1016,7 +1298,11 @@ async def handle_gallabox_webhook(request: Request):
     final_lead_status = updated_lead["status"] if updated_lead else lead["status"]
     try:
         if force_finish_qualification:
-            final_lead_status = get_final_lead_status(updated_lead)
+            final_lead_status = (
+                "qualificado"
+                if is_qualified_lead_data(updated_lead) or has_required_qualification_context(history)
+                else "novo"
+            )
             qualification_summary = generate_qualification_summary(history, updated_lead or lead_info or {})
             save_qualification_summary(session_id, qualification_summary)
             set_lead_status(session_id, final_lead_status)
