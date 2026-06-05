@@ -134,6 +134,7 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 - O lead ja esta qualificado, mas a conversa nao deve encerrar automaticamente.
 - Voce pode fazer uma conversa curta de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
 - Priorize entender produtos de interesse, dor/necessidade principal ou contexto de compra.
+- Se o cliente responder uma pergunta opcional com texto livre, aceite a resposta como informacao valida; nao exija formato especifico.
 - Depois desse aprofundamento, obrigatoriamente proponha o proximo passo com uma pergunta objetiva de sim/nao:
   "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
 - Se o cliente aceitar, agradeca e informe que um consultor comercial entrara em contato.
@@ -253,6 +254,52 @@ def is_waiting_consultant_confirmation(history: list[dict[str, str]]) -> bool:
         or "entrar em contato" in last_message
         or "contato com voce" in last_message
         or "contato com você" in last_message
+    )
+
+
+def is_waiting_optional_detail(history: list[dict[str, str]]) -> bool:
+    last_message = normalize_trigger_text(last_assistant_message(history))
+    optional_markers = (
+        "produtos",
+        "produto",
+        "interesse",
+        "necessidade",
+        "necessidades",
+        "utiliza",
+        "precisa",
+        "dor",
+        "dores",
+    )
+    consultant_markers = (
+        "consultor comercial",
+        "entrar em contato",
+        "contato com voce",
+        "contato com você",
+    )
+    return any(marker in last_message for marker in optional_markers) and not any(
+        marker in last_message for marker in consultant_markers
+    )
+
+
+def has_substantive_text(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    return len(normalized) >= 3 and normalized not in {"sim", "nao", "ok"}
+
+
+def get_consultant_offer_message(user_text: str) -> str:
+    detail = str(user_text or "").strip()
+    if detail:
+        return (
+            f"Entendi, obrigado por compartilhar: {detail}. "
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+        )
+    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+
+
+def get_yes_no_clarification_message() -> str:
+    return (
+        "Para eu encaminhar corretamente: voce autoriza que um consultor comercial da Imdepa "
+        "entre em contato? Responda sim ou nao."
     )
 
 
@@ -841,6 +888,16 @@ async def handle_gallabox_webhook(request: Request):
         history.append({"role": "assistant", "content": ai_response})
         force_finish_qualification = True
         consultant_accepted = False
+    elif is_waiting_consultant_confirmation(history):
+        ai_response = get_yes_no_clarification_message()
+        history.append({"role": "assistant", "content": ai_response})
+        force_finish_qualification = False
+        consultant_accepted = None
+    elif is_waiting_optional_detail(history) and has_substantive_text(incoming.text):
+        ai_response = get_consultant_offer_message(incoming.text)
+        history.append({"role": "assistant", "content": ai_response})
+        force_finish_qualification = False
+        consultant_accepted = None
     else:
         force_finish_qualification = False
         consultant_accepted = None
