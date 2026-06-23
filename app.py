@@ -115,10 +115,10 @@ Voce deve conduzir uma conversa natural e amigavel com potenciais clientes (lead
 4. Apresentar solucoes conectando com os diferenciais da Imdepa
 
 ## Fluxo inicial do atendimento (faca em sequencia, com 1 pergunta por vez):
-1. Peca apenas o CNPJ da empresa
-2. Depois de receber o CNPJ, peca seu nome
+1. Peca apenas o CNPJ da empresa, explicando que isso ajuda a identificar a empresa corretamente
+2. Depois de receber o CNPJ, peca o nome da pessoa de contato
 3. Depois, peca o e-mail para contato
-4. Em seguida, peca o telefone para contato
+4. Em seguida, peca o telefone com DDD para contato
 5. Por fim, peca o segmento da empresa
 
 Se um CNPJ valido for informado e o nome da empresa for localizado em base publica, confirme o nome da empresa antes de pedir o proximo dado.
@@ -126,17 +126,20 @@ Apresente a Imdepa de forma breve antes de iniciar a coleta e mantenha o tom con
 Com CNPJ, seu nome, e-mail, telefone e segmento, o lead ja deve ser tratado como qualificado.
 Nao transforme isso em formulario: conduza de forma natural, mas respeite essa ordem.
 Nao peca outras informacoes antes de concluir essa sequencia.
+Explique quando fizer sentido que os dados servem para o consultor comercial entrar em contato ja com o contexto correto.
 
 ## Quando a resposta vier fora do esperado:
 - Nao avance para a proxima etapa se o dado obrigatorio estiver ausente ou em formato invalido.
-- Explique de forma simples por que precisa daquele dado e peca novamente somente a informacao correta.
-- Se o cliente mandar texto livre, pergunta, saudacao ou resposta ambigua, acolha brevemente e redirecione para o dado atual.
+- Explique de forma simples por que precisa daquele dado e peca novamente somente a informacao correta, sem soar robotica.
+- Se o cliente mandar texto livre, pergunta, saudacao ou resposta ambigua, acolha brevemente, responda o essencial e redirecione para o dado atual.
+- Se o cliente enviar uma frase longa contendo o dado necessario, aproveite o dado e siga para a proxima etapa sem pedir novamente.
 - CNPJ precisa ter 14 digitos validos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e numero.
-- Para o segmento, tente enquadrar em Agricola, Industrial, Automotivo ou Revenda. Se o cliente responder outro segmento, confirme se existe aderencia a uma dessas areas antes de seguir.
+- Para o segmento, tente enquadrar em Agricola, Industrial, Automotivo ou Revenda. Se nenhum deles fizer sentido, registre como Outro e siga.
 - Reforce que esses dados servem para que um consultor comercial da Imdepa consiga entrar em contato corretamente.
 - Se o cliente disser que o nome da empresa localizado pelo CNPJ esta errado, peca o nome correto da empresa.
 - Depois de receber o nome correto da empresa, retome a sequencia obrigatoria pedindo o nome da pessoa de contato.
 - Nao confunda nome da empresa com nome da pessoa de contato.
+- Se o cliente demonstrar pressa, explique que faltam poucas informacoes para encaminhar corretamente ao consultor e continue com a proxima pergunta obrigatoria.
 
 ## Informacoes opcionais (somente depois do atendimento inicial, se fizer sentido):
 - Nome da empresa
@@ -146,7 +149,7 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 
 ## Depois que CNPJ, nome, e-mail, telefone e segmento forem coletados:
 - O lead ja esta qualificado, mas a conversa nao deve encerrar automaticamente.
-- Voce pode fazer uma conversa curta de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
+- Voce pode fazer uma conversa curta e consultiva de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
 - Priorize entender produtos de interesse, dor/necessidade principal ou contexto de compra.
 - Se o cliente responder uma pergunta opcional com texto livre, aceite a resposta como informacao valida; nao exija formato especifico.
 - Se a resposta opcional ja trouxer contexto suficiente, proponha o contato do consultor. Se ainda faltar contexto comercial, faca apenas mais uma pergunta objetiva.
@@ -169,10 +172,12 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 - Priorize frases curtas, linguagem simples e sem repetir informacoes ja ditas
 - Responda de forma curta e direta: 1 paragrafo curto ou ate 3 frases
 - Use emojis com moderacao (maximo 1-2 por mensagem)
+- Evite frases secas como "dado invalido"; prefira orientar exatamente como o cliente deve enviar a informacao
+- Sempre mantenha claro o beneficio para o cliente: encaminhamento correto e contato mais eficiente do consultor
 
 ## Inicio da conversa:
 Na primeira mensagem, apresente-se, apresente brevemente a Imdepa e depois solicite apenas o CNPJ. Exemplo:
-"Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. Para iniciar seu atendimento, me informe o CNPJ da empresa."""
+"Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. Para iniciar seu atendimento e identificar sua empresa corretamente, me informe o CNPJ da empresa."""
 
 
 def get_conversation(session_id: str) -> list[dict[str, str]]:
@@ -190,7 +195,7 @@ def get_initial_message() -> str:
     return (
         "Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores "
         "distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. "
-        "Para iniciar seu atendimento, me informe o CNPJ da empresa."
+        "Para iniciar seu atendimento e identificar sua empresa corretamente, me informe o CNPJ da empresa."
     )
 
 
@@ -276,7 +281,6 @@ def has_valid_contact_name(text: str) -> bool:
     if normalized in {"oi", "ola", "sim", "nao", "ok", "teste"}:
         return False
     invalid_markers = (
-        "empresa",
         "cnpj",
         "errado",
         "errada",
@@ -296,7 +300,7 @@ def has_valid_segment(text: str) -> bool:
     normalized = normalize_trigger_text(text)
     return any(
         segment in normalized
-        for segment in ("agricola", "industrial", "automotivo", "revenda")
+        for segment in ("agricola", "industrial", "automotivo", "revenda", "outro")
     )
 
 
@@ -580,15 +584,16 @@ def build_runtime_guidance(
         digits = get_text_digits(user_text)
         if len(digits) != 14:
             return (
-                "O cliente ainda nao informou um CNPJ completo. Responda com naturalidade, "
-                "explique que precisa dos 14 digitos do CNPJ para identificar a empresa e peca novamente apenas o CNPJ.",
+                "O cliente ainda nao informou um CNPJ completo. Responda com naturalidade, explique que o CNPJ "
+                "ajuda a identificar a empresa corretamente para encaminhar ao consultor e peca novamente apenas os 14 digitos.",
                 False,
                 None,
             )
         if not is_valid_cnpj_digits(digits):
             return (
                 "O cliente informou um CNPJ com 14 digitos, mas ele nao parece valido. "
-                "Responda de forma educada, diga que o CNPJ parece incorreto e peca para conferir e enviar novamente.",
+                "Responda de forma educada, evite tom de erro seco, explique que precisa confirmar a empresa corretamente "
+                "e peca para conferir e enviar novamente.",
                 False,
                 None,
             )
@@ -619,24 +624,24 @@ def build_runtime_guidance(
 
     if expected_step == "name" and not has_valid_contact_name(user_text):
         return (
-            "A resposta nao parece conter o nome do contato. Acolha brevemente e peca novamente o nome "
-            "da pessoa para que o consultor comercial saiba com quem falar.",
+            "A resposta nao parece conter o nome da pessoa de contato. Acolha brevemente e peca novamente o nome "
+            "da pessoa, explicando que isso ajuda o consultor comercial a saber com quem falar.",
             False,
             None,
         )
 
     if expected_step == "email" and not has_valid_email(user_text):
         return (
-            "A resposta nao contem um e-mail valido. Explique rapidamente que o e-mail e necessario para contato "
-            "e peca que o cliente envie um e-mail em formato valido.",
+            "A resposta nao contem um e-mail valido. Explique rapidamente que o e-mail ajuda o consultor a registrar "
+            "e retornar o atendimento, e peca um e-mail em formato valido.",
             False,
             None,
         )
 
     if expected_step == "phone" and not has_valid_phone(user_text):
         return (
-            "A resposta nao contem um telefone valido com DDD. Explique que precisa do melhor telefone para contato "
-            "do consultor comercial e peca novamente o numero com DDD.",
+            "A resposta nao contem um telefone valido com DDD. Explique que precisa do melhor telefone para o consultor "
+            "comercial entrar em contato e peca novamente o numero com DDD.",
             False,
             None,
         )
@@ -644,8 +649,8 @@ def build_runtime_guidance(
     if expected_step == "segment" and not has_valid_segment(user_text):
         return (
             "A resposta nao corresponde claramente aos segmentos Agricola, Industrial, Automotivo ou Revenda. "
-            "Responda com naturalidade, explique que a Imdepa atua principalmente nesses segmentos e peca para o cliente "
-            "indicar qual deles mais se aproxima da empresa. Nao avance ate ter esse enquadramento.",
+            "Responda com naturalidade, explique que a Imdepa atua principalmente nesses segmentos e pergunte qual deles "
+            "mais se aproxima da empresa. Se nenhum fizer sentido, ofereca registrar como Outro.",
             False,
             None,
         )
@@ -687,14 +692,14 @@ def build_runtime_guidance(
         if optional_questions >= 2:
             return (
                 "O cliente respondeu a etapa de aprofundamento. Aceite a informacao como valida, conecte brevemente "
-                "com o atendimento da Imdepa e proponha o contato do consultor comercial com uma pergunta objetiva de sim ou nao.",
+                "com o atendimento da Imdepa e proponha o contato do consultor comercial como proximo passo, com pergunta objetiva de sim ou nao.",
                 False,
                 None,
             )
         return (
-            "O cliente respondeu uma pergunta opcional com texto livre. Use essa informacao na conversa. "
+            "O cliente respondeu uma pergunta opcional com texto livre. Use essa informacao na conversa e mantenha tom consultivo. "
             "Se ela ja for suficiente para o comercial, proponha o contato do consultor com pergunta de sim ou nao; "
-            "se ainda faltar contexto, faca apenas mais uma pergunta objetiva de aprofundamento.",
+            "se ainda faltar contexto relevante, faca apenas mais uma pergunta objetiva de aprofundamento.",
             False,
             None,
         )
