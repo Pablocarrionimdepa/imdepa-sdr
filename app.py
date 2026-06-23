@@ -134,6 +134,9 @@ Nao peca outras informacoes antes de concluir essa sequencia.
 - CNPJ precisa ter 14 digitos validos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e numero.
 - Para o segmento, tente enquadrar em Agricola, Industrial, Automotivo ou Revenda. Se o cliente responder outro segmento, confirme se existe aderencia a uma dessas areas antes de seguir.
 - Reforce que esses dados servem para que um consultor comercial da Imdepa consiga entrar em contato corretamente.
+- Se o cliente disser que o nome da empresa localizado pelo CNPJ esta errado, peca o nome correto da empresa.
+- Depois de receber o nome correto da empresa, retome a sequencia obrigatoria pedindo o nome da pessoa de contato.
+- Nao confunda nome da empresa com nome da pessoa de contato.
 
 ## Informacoes opcionais (somente depois do atendimento inicial, se fizer sentido):
 - Nome da empresa
@@ -272,6 +275,19 @@ def has_valid_contact_name(text: str) -> bool:
     normalized = normalize_trigger_text(text)
     if normalized in {"oi", "ola", "sim", "nao", "ok", "teste"}:
         return False
+    invalid_markers = (
+        "empresa",
+        "cnpj",
+        "errado",
+        "errada",
+        "incorreto",
+        "incorreta",
+        "nao e",
+        "nao esta",
+        "nome correto",
+    )
+    if any(marker in normalized for marker in invalid_markers):
+        return False
     letters = re.sub(r"[^a-zA-Z]", "", normalized)
     return len(letters) >= 2
 
@@ -282,6 +298,20 @@ def has_valid_segment(text: str) -> bool:
         segment in normalized
         for segment in ("agricola", "industrial", "automotivo", "revenda")
     )
+
+
+def is_company_name_correction_text(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    correction_markers = ("errado", "errada", "incorreto", "incorreta", "nao e", "nao esta")
+    return "empresa" in normalized and any(marker in normalized for marker in correction_markers)
+
+
+def has_valid_company_name(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    if normalized in {"sim", "nao", "ok", "oi", "ola"}:
+        return False
+    letters = re.sub(r"[^a-zA-Z]", "", normalized)
+    return len(letters) >= 2
 
 
 def is_valid_cnpj_digits(digits: str) -> bool:
@@ -434,6 +464,14 @@ def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
     if "segmento" in normalized:
         return "segment"
     if (
+        "nome correto da sua empresa" in normalized
+        or "nome correto da empresa" in normalized
+        or "confirme" in normalized
+        and "nome" in normalized
+        and "empresa" in normalized
+    ):
+        return "company_name"
+    if (
         "seu nome" in normalized
         or "nome para contato" in normalized
         or "nome do contato" in normalized
@@ -555,6 +593,30 @@ def build_runtime_guidance(
                 None,
             )
 
+    if expected_step == "name" and is_company_name_correction_text(user_text):
+        return (
+            "O cliente disse que o nome da empresa localizado pelo CNPJ esta errado. "
+            "Acolha a correcao, nao avance para e-mail ainda e peca apenas o nome correto da empresa. "
+            "Depois disso, a proxima etapa deve ser pedir o nome da pessoa de contato.",
+            False,
+            None,
+        )
+
+    if expected_step == "company_name":
+        if not has_valid_company_name(user_text):
+            return (
+                "O cliente ainda nao informou claramente o nome correto da empresa. "
+                "Peca novamente apenas o nome correto da empresa, de forma breve.",
+                False,
+                None,
+            )
+        return (
+            "O cliente informou o nome correto da empresa. Agradeca a correcao e retome a sequencia obrigatoria "
+            "pedindo apenas o nome da pessoa de contato. Nao peca e-mail ainda.",
+            False,
+            None,
+        )
+
     if expected_step == "name" and not has_valid_contact_name(user_text):
         return (
             "A resposta nao parece conter o nome do contato. Acolha brevemente e peca novamente o nome "
@@ -587,6 +649,16 @@ def build_runtime_guidance(
             False,
             None,
         )
+    if expected_step == "segment" and has_valid_segment(user_text):
+        required_answers = extract_required_answers_from_history(history)
+        if not required_answers["name"]:
+            return (
+                "O cliente informou um segmento valido, mas o nome da pessoa de contato ainda nao foi coletado "
+                "porque houve uma correcao do nome da empresa antes. Aceite o segmento e peca apenas o nome "
+                "da pessoa de contato antes de fazer perguntas opcionais ou oferecer consultor.",
+                False,
+                None,
+            )
 
     if expected_step == "consultant_confirmation":
         if is_positive_confirmation(user_text):
