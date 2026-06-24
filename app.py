@@ -585,6 +585,11 @@ def build_guided_history(
     return [{"role": "system", "content": guidance}, *guided_history]
 
 
+def ensure_ai_response_text(response: Optional[str], fallback: str) -> str:
+    response_text = str(response or "").strip()
+    return response_text or fallback
+
+
 def build_runtime_guidance(
     history: list[dict[str, str]],
     user_text: str,
@@ -676,6 +681,20 @@ def build_runtime_guidance(
                 False,
                 None,
             )
+        if is_other_segment_response(user_text) and not has_primary_segment(user_text):
+            return (
+                "O cliente informou um segmento fora de Agricola, Industrial ou Automotivo. Aceite como Outro, "
+                "diga que vai registrar dessa forma para direcionar melhor o atendimento e siga para uma pergunta "
+                "curta de aprofundamento comercial ou, se o contexto ja for suficiente, ofereca o contato do consultor.",
+                False,
+                None,
+            )
+        return (
+            "O cliente informou um segmento valido. Aceite a resposta e siga para uma pergunta curta de aprofundamento "
+            "comercial ou, se o contexto ja for suficiente, ofereca o contato do consultor comercial.",
+            False,
+            None,
+        )
 
     if expected_step == "consultant_confirmation":
         if is_positive_confirmation(user_text):
@@ -956,7 +975,7 @@ async def api_test_interest_click(payload: InterestClickTestRequest):
     )
 
 
-def activate_lead(name: str, phone: str, channel_id: str) -> dict:
+def activate_lead(name: str, phone: str, channel_id: str) -> tuple[dict, bool]:
     name = name.strip()
     phone = phone.strip()
     channel_id = channel_id.strip()
@@ -967,13 +986,17 @@ def activate_lead(name: str, phone: str, channel_id: str) -> dict:
     if not name:
         name = phone
 
+    existing_lead = get_lead_by_phone(phone)
+    already_active = bool(existing_lead and existing_lead.get("status") == "ACTIVE")
+    initial_message_created = False
+
     try:
         lead = create_active_lead(name=name, phone=phone, channel_id=channel_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     history = get_conversation(lead["session_id"])
-    if len(history) == 1:
+    if not already_active:
         initial_message = get_initial_message()
         history.append({"role": "assistant", "content": initial_message})
         append_conversation_message(
@@ -982,8 +1005,9 @@ def activate_lead(name: str, phone: str, channel_id: str) -> dict:
             initial_message,
             {"source": "start"},
         )
+        initial_message_created = True
 
-    return lead
+    return lead, initial_message_created
 
 
 def start_fernanda_from_interest_click(
@@ -994,15 +1018,22 @@ def start_fernanda_from_interest_click(
     conversation_id: Optional[str] = None,
     source: str,
 ) -> dict:
-    lead = activate_lead(name=name, phone=phone, channel_id=channel_id)
+    lead, initial_message_created = activate_lead(name=name, phone=phone, channel_id=channel_id)
     initial_message = get_initial_message()
-    provider_response = send_gallabox_message_if_configured(
-        to=lead["telefone"],
-        text=initial_message,
-        channel_id=lead.get("channel_id"),
-        recipient_name=lead.get("contato"),
-        conversation_id=conversation_id,
-    )
+    provider_response = None
+    if initial_message_created:
+        provider_response = send_gallabox_message_if_configured(
+            to=lead["telefone"],
+            text=initial_message,
+            channel_id=lead.get("channel_id"),
+            recipient_name=lead.get("contato"),
+            conversation_id=conversation_id,
+        )
+    else:
+        print(
+            "Inicio ignorado porque o lead ja possui atendimento ativo: "
+            f"source={source}, phone={lead['telefone']}, session_id={lead['session_id']}"
+        )
 
     print(
         "Fernanda ativada por clique de interesse: "
@@ -1014,6 +1045,7 @@ def start_fernanda_from_interest_click(
         "session_id": lead["session_id"],
         "lead": lead,
         "response": initial_message,
+        "message_sent": initial_message_created,
         "provider_response": provider_response,
         "trigger": get_interest_button_label(),
     }
@@ -1303,7 +1335,10 @@ async def handle_gallabox_webhook(request: Request):
     )
     if runtime_guidance:
         try:
-            ai_response = get_ai_response(build_guided_history(history, runtime_guidance))
+            ai_response = ensure_ai_response_text(
+                get_ai_response(build_guided_history(history, runtime_guidance)),
+                "Obrigado pelas informacoes. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
+            )
         except Exception as exc:
             print(f"Erro ao gerar resposta da IA: {exc}")
             if force_finish_qualification and consultant_accepted is True:
@@ -1326,7 +1361,10 @@ async def handle_gallabox_webhook(request: Request):
             force_finish_qualification = False
             consultant_accepted = None
             try:
-                ai_response = get_ai_response(history)
+                ai_response = ensure_ai_response_text(
+                    get_ai_response(history),
+                    "Obrigado pelas informacoes. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
+                )
             except Exception as exc:
                 print(f"Erro ao gerar resposta da IA: {exc}")
                 ai_response = (
