@@ -119,9 +119,32 @@ def init_db():
         """
     )
 
+    _repair_lead_lookup_phones(cursor)
+
     conn.commit()
     conn.close()
     print("Banco de dados inicializado com sucesso.")
+
+
+def _repair_lead_lookup_phones(cursor) -> int:
+    """Restaura a chave de telefone do WhatsApp quando ela existe no session_id."""
+    cursor.execute("SELECT id, session_id, phone_normalized FROM leads WHERE session_id LIKE 'lead:%'")
+    repaired_count = 0
+    for row in cursor.fetchall():
+        session_phone = normalize_phone(str(row["session_id"] or "")[5:])
+        if not session_phone:
+            continue
+        current_phone = normalize_phone(row["phone_normalized"])
+        if current_phone == session_phone:
+            continue
+        cursor.execute(
+            "UPDATE leads SET phone_normalized = ?, updated_at = ? WHERE id = ?",
+            (session_phone, datetime.now().isoformat(), row["id"]),
+        )
+        repaired_count += 1
+    if repaired_count:
+        print(f"Telefones de lookup reparados: {repaired_count}")
+    return repaired_count
 
 
 def save_lead(session_id: str, lead_info: dict) -> bool:
@@ -130,6 +153,7 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
     cursor = conn.cursor()
 
     try:
+        explicit_phone_normalized = bool(str((lead_info or {}).get("phone_normalized", "")).strip())
         normalized = _normalize_contact_fields(lead_info)
 
         cursor.execute("SELECT * FROM leads WHERE session_id = ?", (session_id,))
@@ -157,7 +181,16 @@ def save_lead(session_id: str, lead_info: dict) -> bool:
                 "proximo_passo": "proximo_passo",
             }
 
+            existing_lookup_phone = normalize_phone(
+                existing["phone_normalized"] if "phone_normalized" in existing.keys() else ""
+            )
             for json_key, db_col in field_mapping.items():
+                if (
+                    json_key == "phone_normalized"
+                    and existing_lookup_phone
+                    and not explicit_phone_normalized
+                ):
+                    continue
                 new_val = str(normalized.get(json_key, "")).strip()
                 if new_val:
                     updates.append(f"{db_col} = ?")
