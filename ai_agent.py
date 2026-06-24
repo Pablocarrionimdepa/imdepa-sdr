@@ -50,7 +50,7 @@ Retorne um JSON com os seguintes campos (deixe string vazia \"\" se a informacao
     "cnpj": "CNPJ da empresa",
     "email": "E-mail informado para contato",
     "telefone": "Telefone informado para contato",
-    "segmento": "Agricola, Industrial, Automotivo, Revenda ou outro",
+    "segmento": "Agricola, Industrial, Automotivo ou Outro. Use Outro quando o segmento mencionado nao for um desses tres.",
     "produtos_interesse": "Produtos que o cliente demonstrou interesse",
     "volume_compra": "Volume estimado de compras mensal",
     "fornecedor_atual": "Fornecedor(es) atual(is) mencionado(s)",

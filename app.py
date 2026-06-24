@@ -134,7 +134,7 @@ Explique quando fizer sentido que os dados servem para o consultor comercial ent
 - Se o cliente mandar texto livre, pergunta, saudacao ou resposta ambigua, acolha brevemente, responda o essencial e redirecione para o dado atual.
 - Se o cliente enviar uma frase longa contendo o dado necessario, aproveite o dado e siga para a proxima etapa sem pedir novamente.
 - CNPJ precisa ter 14 digitos validos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e numero.
-- Para o segmento, tente enquadrar em Agricola, Industrial, Automotivo ou Revenda. Se nenhum deles fizer sentido, registre como Outro e siga.
+- Para o segmento, pergunte somente entre Agricola, Industrial ou Automotivo. Se nenhum deles fizer sentido para o cliente, aceite e registre como Outro.
 - Reforce que esses dados servem para que um consultor comercial da Imdepa consiga entrar em contato corretamente.
 - Se o cliente disser que o nome da empresa localizado pelo CNPJ esta errado, peca o nome correto da empresa.
 - Depois de receber o nome correto da empresa, retome a sequencia obrigatoria pedindo o nome da pessoa de contato.
@@ -166,7 +166,6 @@ Explique quando fizer sentido que os dados servem para o consultor comercial ent
 - Adapte a conversa conforme as respostas do cliente
 - Se o cliente reclamar de prazo, destaque os 10 CDs da Imdepa
 - Se buscar preco, apresente a marca GTOP-GBR
-- Para revendas, mencione o e-commerce B2B com cashback e Clube Imdepa
 - Ao final, proponha agendar uma conversa com um consultor comercial
 - Nunca invente informacoes que nao estejam no contexto acima
 - Priorize frases curtas, linguagem simples e sem repetir informacoes ja ditas
@@ -297,11 +296,24 @@ def has_valid_contact_name(text: str) -> bool:
 
 
 def has_valid_segment(text: str) -> bool:
+    return has_primary_segment(text) or is_other_segment_response(text)
+
+
+def has_primary_segment(text: str) -> bool:
     normalized = normalize_trigger_text(text)
-    return any(
-        segment in normalized
-        for segment in ("agricola", "industrial", "automotivo", "revenda", "outro")
-    )
+    return any(segment in normalized for segment in ("agricola", "industrial", "automotivo"))
+
+
+def is_other_segment_response(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    if normalized in {"outro", "outros", "nenhum", "nenhuma", "nao se aplica"}:
+        return True
+    if is_positive_confirmation(text) or is_negative_confirmation(text):
+        return False
+    if "?" in str(text or "") or "por que" in normalized or "porque" in normalized:
+        return False
+    letters = re.sub(r"[^a-zA-Z]", "", normalized)
+    return len(letters) >= 4
 
 
 def is_company_name_correction_text(text: str) -> bool:
@@ -648,7 +660,7 @@ def build_runtime_guidance(
 
     if expected_step == "segment" and not has_valid_segment(user_text):
         return (
-            "A resposta nao corresponde claramente aos segmentos Agricola, Industrial, Automotivo ou Revenda. "
+            "A resposta nao corresponde claramente aos segmentos Agricola, Industrial ou Automotivo. "
             "Responda com naturalidade, explique que a Imdepa atua principalmente nesses segmentos e pergunte qual deles "
             "mais se aproxima da empresa. Se nenhum fizer sentido, ofereca registrar como Outro.",
             False,
