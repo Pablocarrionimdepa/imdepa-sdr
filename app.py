@@ -155,8 +155,8 @@ Explique quando fizer sentido que os dados servem para o consultor comercial ent
 - Se a resposta opcional ja trouxer contexto suficiente, proponha o contato do consultor. Se ainda faltar contexto comercial, faca apenas mais uma pergunta objetiva.
 - Depois desse aprofundamento, obrigatoriamente proponha o proximo passo com uma pergunta objetiva de sim/nao:
   "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
-- Se o cliente aceitar, agradeca e informe que um consultor comercial entrara em contato.
-- Se o cliente recusar, agradeca, diga que o atendimento ficou registrado e encerre de forma cordial.
+- Se o cliente aceitar, agradeca, informe que um consultor comercial entrara em contato e diga que o atendimento automatico sera encerrado por aqui.
+- Se o cliente recusar, agradeca, diga que o atendimento ficou registrado e que o atendimento automatico sera encerrado por aqui.
 - Sempre gere um desfecho claro sobre haver ou nao contato de consultor comercial.
 
 ## Regras de conduta:
@@ -445,14 +445,16 @@ def is_consultant_handoff_final_message(text: str) -> bool:
 def get_final_handoff_message() -> str:
     return (
         "Perfeito! Obrigado pelas informacoes. Sua qualificacao foi concluida e um consultor "
-        "comercial da Imdepa entrara em contato para dar continuidade ao atendimento."
+        "comercial da Imdepa entrara em contato para dar continuidade. Vou encerrar este "
+        "atendimento automatico por aqui."
     )
 
 
 def get_final_no_handoff_message() -> str:
     return (
         "Sem problema. Obrigado pelas informacoes. Vou deixar seu atendimento registrado e, "
-        "se precisar de apoio da Imdepa no futuro, e so chamar."
+        "se precisar de apoio da Imdepa no futuro, e so chamar. Vou encerrar este atendimento "
+        "automatico por aqui."
     )
 
 
@@ -463,9 +465,19 @@ def get_segment_followup_message(user_text: str) -> str:
             "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
         )
     return (
-        "Perfeito, vou registrar esse segmento para direcionar melhor o atendimento. "
+        "Perfeito, vou registrar essa informacao para direcionar melhor o atendimento. "
         "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
     )
+
+
+def get_optional_detail_consultant_offer_message(user_text: str) -> str:
+    detail = str(user_text or "").strip()
+    if detail:
+        return (
+            f"Otimo, vou registrar: {detail}. "
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+        )
+    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
 
 
 def get_missing_contact_name_after_segment_message() -> str:
@@ -503,6 +515,8 @@ def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
         return "email"
     if "telefone" in normalized or "whatsapp" in normalized:
         return "phone"
+    if is_optional_question_text(normalized):
+        return "optional_detail"
     if "segmento" in normalized:
         return "segment"
     if (
@@ -520,8 +534,6 @@ def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
         or ("me informe" in normalized and "nome" in normalized)
     ):
         return "name"
-    if is_optional_question_text(normalized):
-        return "optional_detail"
     return None
 
 
@@ -628,7 +640,23 @@ def get_deterministic_response(
         if not required_answers["name"]:
             return get_missing_contact_name_after_segment_message()
         return get_segment_followup_message(user_text)
+    if expected_step == "optional_detail" and has_substantive_text(user_text):
+        return get_optional_detail_consultant_offer_message(user_text)
     return None
+
+
+def get_consultant_confirmation_outcome(
+    history: list[dict[str, str]],
+    user_text: str,
+) -> tuple[Optional[str], bool, Optional[bool]]:
+    expected_step = get_expected_input_step(history)
+    if expected_step != "consultant_confirmation":
+        return None, False, None
+    if is_positive_confirmation(user_text):
+        return get_final_handoff_message(), True, True
+    if is_negative_confirmation(user_text):
+        return get_final_no_handoff_message(), True, False
+    return None, False, None
 
 
 def build_runtime_guidance(
@@ -741,14 +769,16 @@ def build_runtime_guidance(
         if is_positive_confirmation(user_text):
             return (
                 "O cliente autorizou o contato do consultor. Agradeca, informe que a qualificacao foi concluida "
-                "e que um consultor comercial da Imdepa entrara em contato para dar continuidade.",
+                "e que um consultor comercial da Imdepa entrara em contato para dar continuidade. Encerre informando "
+                "que o atendimento automatico sera encerrado por aqui e nao convide o cliente a continuar conversando com a IA.",
                 True,
                 True,
             )
         if is_negative_confirmation(user_text):
             return (
                 "O cliente nao autorizou o contato do consultor neste momento. Agradeca, informe que o atendimento "
-                "ficara registrado e encerre de forma cordial, sem insistir.",
+                "ficara registrado e encerre de forma cordial, sem insistir. Informe que o atendimento automatico "
+                "sera encerrado por aqui.",
                 True,
                 False,
             )
@@ -841,6 +871,12 @@ async def chat(msg: ChatMessage):
     session_id = msg.session_id or str(uuid.uuid4())
     history = get_conversation(session_id)
     history.append({"role": "user", "content": msg.message})
+
+    consultant_response, _, _ = get_consultant_confirmation_outcome(history, msg.message)
+    if consultant_response:
+        ai_response = consultant_response
+        history.append({"role": "assistant", "content": ai_response})
+        return ChatResponse(session_id=session_id, response=ai_response, lead_data=None)
 
     deterministic_response = get_deterministic_response(history, msg.message)
     if deterministic_response:
@@ -1376,8 +1412,15 @@ async def handle_gallabox_webhook(request: Request):
         },
     )
 
+    consultant_response, force_finish_qualification, consultant_accepted = get_consultant_confirmation_outcome(
+        history,
+        incoming.text,
+    )
     deterministic_response = get_deterministic_response(history, incoming.text)
-    if deterministic_response:
+    if consultant_response:
+        ai_response = consultant_response
+        history.append({"role": "assistant", "content": ai_response})
+    elif deterministic_response:
         ai_response = deterministic_response
         force_finish_qualification = False
         consultant_accepted = None
@@ -1388,7 +1431,7 @@ async def handle_gallabox_webhook(request: Request):
             incoming.text,
         )
 
-    if not deterministic_response and runtime_guidance:
+    if not consultant_response and not deterministic_response and runtime_guidance:
         try:
             ai_response = ensure_ai_response_text(
                 get_ai_response(build_guided_history(history, runtime_guidance)),
@@ -1406,7 +1449,7 @@ async def handle_gallabox_webhook(request: Request):
                     "Pode tentar novamente em alguns instantes?"
                 )
         history.append({"role": "assistant", "content": ai_response})
-    elif not deterministic_response:
+    elif not consultant_response and not deterministic_response:
         cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
         if cnpj_response:
             ai_response = cnpj_response.response
