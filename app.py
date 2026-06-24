@@ -456,6 +456,25 @@ def get_final_no_handoff_message() -> str:
     )
 
 
+def get_segment_followup_message(user_text: str) -> str:
+    if is_other_segment_response(user_text) and not has_primary_segment(user_text):
+        return (
+            "Entendi, vou registrar como Outro para direcionar melhor o atendimento. "
+            "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+        )
+    return (
+        "Perfeito, vou registrar esse segmento para direcionar melhor o atendimento. "
+        "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+    )
+
+
+def get_missing_contact_name_after_segment_message() -> str:
+    return (
+        "Obrigado pela informacao. Antes de seguir, me informe por favor o seu nome "
+        "para o consultor saber com quem falar."
+    )
+
+
 def get_final_lead_status(lead_data: Optional[dict]) -> str:
     return "qualificado" if is_qualified_lead_data(lead_data) else "novo"
 
@@ -588,6 +607,19 @@ def build_guided_history(
 def ensure_ai_response_text(response: Optional[str], fallback: str) -> str:
     response_text = str(response or "").strip()
     return response_text or fallback
+
+
+def get_deterministic_response(
+    history: list[dict[str, str]],
+    user_text: str,
+) -> Optional[str]:
+    expected_step = get_expected_input_step(history)
+    if expected_step == "segment" and has_valid_segment(user_text):
+        required_answers = extract_required_answers_from_history(history)
+        if not required_answers["name"]:
+            return get_missing_contact_name_after_segment_message()
+        return get_segment_followup_message(user_text)
+    return None
 
 
 def build_runtime_guidance(
@@ -800,6 +832,12 @@ async def chat(msg: ChatMessage):
     session_id = msg.session_id or str(uuid.uuid4())
     history = get_conversation(session_id)
     history.append({"role": "user", "content": msg.message})
+
+    deterministic_response = get_deterministic_response(history, msg.message)
+    if deterministic_response:
+        ai_response = deterministic_response
+        history.append({"role": "assistant", "content": ai_response})
+        return ChatResponse(session_id=session_id, response=ai_response, lead_data=None)
 
     runtime_guidance, _, _ = build_runtime_guidance(history, msg.message)
     if runtime_guidance:
@@ -1329,11 +1367,19 @@ async def handle_gallabox_webhook(request: Request):
         },
     )
 
-    runtime_guidance, force_finish_qualification, consultant_accepted = build_runtime_guidance(
-        history,
-        incoming.text,
-    )
-    if runtime_guidance:
+    deterministic_response = get_deterministic_response(history, incoming.text)
+    if deterministic_response:
+        ai_response = deterministic_response
+        force_finish_qualification = False
+        consultant_accepted = None
+        history.append({"role": "assistant", "content": ai_response})
+    else:
+        runtime_guidance, force_finish_qualification, consultant_accepted = build_runtime_guidance(
+            history,
+            incoming.text,
+        )
+
+    if not deterministic_response and runtime_guidance:
         try:
             ai_response = ensure_ai_response_text(
                 get_ai_response(build_guided_history(history, runtime_guidance)),
@@ -1351,7 +1397,7 @@ async def handle_gallabox_webhook(request: Request):
                     "Pode tentar novamente em alguns instantes?"
                 )
         history.append({"role": "assistant", "content": ai_response})
-    else:
+    elif not deterministic_response:
         cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
         if cnpj_response:
             ai_response = cnpj_response.response
