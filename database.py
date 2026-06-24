@@ -488,6 +488,59 @@ def get_lead_by_phone(phone: str) -> Optional[dict]:
     return None
 
 
+def get_active_lead_by_message_phone(phone: str) -> Optional[dict]:
+    """Recupera lead ativo pelo telefone salvo nos metadados das mensagens."""
+    normalized_phone = normalize_phone(phone)
+    if not normalized_phone:
+        return None
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT leads.*, lead_messages.metadata
+            FROM lead_messages
+            JOIN leads ON leads.session_id = lead_messages.session_id
+            WHERE leads.status = 'ACTIVE'
+              AND lead_messages.metadata LIKE '%from_number%'
+            ORDER BY lead_messages.created_at DESC, lead_messages.id DESC
+            LIMIT 300
+            """
+        )
+        rows = cursor.fetchall()
+
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except Exception:
+                continue
+
+            from_number = str(metadata.get("from_number", "")).strip()
+            if not phones_match(from_number, normalized_phone):
+                continue
+
+            cursor.execute(
+                "UPDATE leads SET phone_normalized = ?, updated_at = ? WHERE session_id = ?",
+                (normalized_phone, datetime.now().isoformat(), row["session_id"]),
+            )
+            conn.commit()
+            cursor.execute("SELECT * FROM leads WHERE session_id = ?", (row["session_id"],))
+            repaired = cursor.fetchone()
+            print(
+                "Lead recuperado por metadata from_number: "
+                f"phone={phone}, session_id={row['session_id']}"
+            )
+            return _serialize_lead(repaired) if repaired else _serialize_lead(row)
+        return None
+    except Exception as exc:
+        print(f"Erro ao recuperar lead por metadata de telefone: {exc}")
+        return None
+    finally:
+        conn.close()
+
+
 def set_lead_status(session_id: str, status: str) -> bool:
     """Atualiza somente o status de um lead."""
     conn = get_db()

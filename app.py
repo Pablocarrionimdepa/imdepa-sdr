@@ -22,6 +22,7 @@ from database import (
     append_conversation_message,
     create_active_lead,
     get_all_leads,
+    get_active_lead_by_message_phone,
     get_conversation_messages,
     get_db_status,
     get_lead_by_phone,
@@ -1387,6 +1388,8 @@ async def handle_gallabox_webhook(request: Request):
         )
 
     lead = get_lead_by_phone(incoming.from_number)
+    if not lead:
+        lead = get_active_lead_by_message_phone(incoming.from_number)
     if not lead:
         print(f"Gallabox webhook ignored: lead nao encontrado para telefone {incoming.from_number}.")
         return {"status": "ignored", "reason": "lead nao encontrado pelo telefone"}
