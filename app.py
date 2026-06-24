@@ -471,6 +471,26 @@ def get_segment_followup_message(user_text: str) -> str:
     )
 
 
+def get_name_followup_message(user_text: str) -> str:
+    contact_name = extract_contact_name_from_text(user_text)
+    if contact_name:
+        return (
+            f"Obrigado, {contact_name}. Agora, por favor, me informe o seu e-mail para contato. "
+            "Assim o consultor comercial podera falar com voce de forma mais rapida e eficiente."
+        )
+    return (
+        "Obrigado. Agora, por favor, me informe o seu e-mail para contato. "
+        "Assim o consultor comercial podera falar com voce de forma mais rapida e eficiente."
+    )
+
+
+def get_email_followup_message() -> str:
+    return (
+        "Perfeito, obrigado. Agora, por favor, me informe o telefone com DDD para que "
+        "nosso consultor possa entrar em contato com voce rapidamente."
+    )
+
+
 def get_optional_detail_consultant_offer_message(user_text: str) -> str:
     detail = str(user_text or "").strip()
     if detail:
@@ -493,6 +513,43 @@ def get_phone_followup_message() -> str:
         "Perfeito, obrigado. Para finalizar, qual o segmento da sua empresa: "
         "Agricola, Industrial ou Automotivo? Se nao for nenhum desses, pode dizer Outro."
     )
+
+
+def extract_contact_name_from_text(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    normalized = normalize_trigger_text(value)
+    for prefix in ("meu nome e ", "me chamo ", "sou o ", "sou a ", "aqui e "):
+        if normalized.startswith(prefix):
+            value = value[len(prefix):].strip()
+            break
+    value = re.split(r"\s*,|\s+da empresa|\s+do grupo|\s+da | \|", value, maxsplit=1)[0].strip()
+    words = value.split()
+    return " ".join(words[:2]).strip()
+
+
+def get_required_step_lead_info(
+    history: list[dict[str, str]],
+    user_text: str,
+) -> dict:
+    expected_step = get_expected_input_step(history)
+    if expected_step == "name" and has_valid_contact_name(user_text):
+        contact_name = extract_contact_name_from_text(user_text) or str(user_text or "").strip()
+        return {"contato": contact_name}
+    if expected_step == "email" and has_valid_email(user_text):
+        email_match = re.search(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", str(user_text or ""))
+        return {"email": email_match.group(0) if email_match else str(user_text or "").strip()}
+    if expected_step == "phone" and has_valid_phone(user_text):
+        return {"telefone": str(user_text or "").strip()}
+    if expected_step == "segment" and has_valid_segment(user_text):
+        if has_primary_segment(user_text):
+            normalized = normalize_trigger_text(user_text)
+            for segment in ("agricola", "industrial", "automotivo"):
+                if segment in normalized:
+                    return {"segmento": segment.capitalize()}
+        return {"segmento": "Outro"}
+    return {}
 
 
 def get_final_lead_status(lead_data: Optional[dict]) -> str:
@@ -634,6 +691,10 @@ def get_deterministic_response(
     user_text: str,
 ) -> Optional[str]:
     expected_step = get_expected_input_step(history)
+    if expected_step == "name" and has_valid_contact_name(user_text):
+        return get_name_followup_message(user_text)
+    if expected_step == "email" and has_valid_email(user_text):
+        return get_email_followup_message()
     if expected_step == "phone" and has_valid_phone(user_text):
         return get_phone_followup_message()
     if expected_step == "segment" and has_valid_segment(user_text):
@@ -882,7 +943,10 @@ async def chat(msg: ChatMessage):
     deterministic_response = get_deterministic_response(history, msg.message)
     if deterministic_response:
         ai_response = deterministic_response
+        lead_info = get_required_step_lead_info(history, msg.message)
         history.append({"role": "assistant", "content": ai_response})
+        if lead_info:
+            save_lead(session_id, lead_info)
         return ChatResponse(session_id=session_id, response=ai_response, lead_data=None)
 
     runtime_guidance, _, _ = build_runtime_guidance(history, msg.message)
@@ -1427,7 +1491,10 @@ async def handle_gallabox_webhook(request: Request):
         ai_response = deterministic_response
         force_finish_qualification = False
         consultant_accepted = None
+        lead_info = get_required_step_lead_info(history, incoming.text)
         history.append({"role": "assistant", "content": ai_response})
+        if lead_info:
+            save_lead(session_id, lead_info)
     else:
         runtime_guidance, force_finish_qualification, consultant_accepted = build_runtime_guidance(
             history,
