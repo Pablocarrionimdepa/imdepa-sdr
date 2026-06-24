@@ -475,6 +475,13 @@ def get_missing_contact_name_after_segment_message() -> str:
     )
 
 
+def get_phone_followup_message() -> str:
+    return (
+        "Perfeito, obrigado. Para finalizar, qual o segmento da sua empresa: "
+        "Agricola, Industrial ou Automotivo? Se nao for nenhum desses, pode dizer Outro."
+    )
+
+
 def get_final_lead_status(lead_data: Optional[dict]) -> str:
     return "qualificado" if is_qualified_lead_data(lead_data) else "novo"
 
@@ -614,6 +621,8 @@ def get_deterministic_response(
     user_text: str,
 ) -> Optional[str]:
     expected_step = get_expected_input_step(history)
+    if expected_step == "phone" and has_valid_phone(user_text):
+        return get_phone_followup_message()
     if expected_step == "segment" and has_valid_segment(user_text):
         required_answers = extract_required_answers_from_history(history)
         if not required_answers["name"]:
