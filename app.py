@@ -204,6 +204,20 @@ def get_interest_button_label() -> str:
     return os.getenv("GALLABOX_INTEREST_BUTTON_LABEL", "Tenho interesse").strip() or "Tenho interesse"
 
 
+def get_interest_button_labels() -> set[str]:
+    labels = {
+        get_interest_button_label(),
+        "Tenho interesse",
+        "Sim, vamos testar então!",
+    }
+    extra_labels = os.getenv("GALLABOX_INTEREST_BUTTON_ALIASES", "")
+    for label in extra_labels.split("|"):
+        label = label.strip()
+        if label:
+            labels.add(label)
+    return labels
+
+
 def normalize_trigger_text(text: str) -> str:
     normalized = str(text or "").strip().lower()
     normalized = "".join(
@@ -230,8 +244,18 @@ def normalize_trigger_text(text: str) -> str:
     return " ".join(normalized.split())
 
 
+def normalize_button_text(text: str) -> str:
+    normalized = normalize_trigger_text(text)
+    normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
+
+
 def is_interest_button_text(text: str) -> bool:
-    return normalize_trigger_text(text) == normalize_trigger_text(get_interest_button_label())
+    normalized_text = normalize_button_text(text)
+    return normalized_text in {
+        normalize_button_text(label)
+        for label in get_interest_button_labels()
+    }
 
 
 def is_positive_confirmation(text: str) -> bool:
@@ -1139,6 +1163,7 @@ async def api_debug_gallabox_status():
         "webhook_secret_configured": bool(os.getenv("GALLABOX_WEBHOOK_SECRET", "").strip()),
         "skip_signature_validation": should_skip_gallabox_signature_validation(),
         "interest_button_label": get_interest_button_label(),
+        "interest_button_aliases": sorted(get_interest_button_labels()),
     }
 
 
