@@ -47,6 +47,21 @@ class IncomingMessage:
     message_id: Optional[str] = None
     event_type: Optional[str] = None
     is_outgoing: bool = False
+    media_url: Optional[str] = None
+    media_id: Optional[str] = None
+    media_type: Optional[str] = None
+    media_mime_type: Optional[str] = None
+    media_filename: Optional[str] = None
+
+    @property
+    def has_audio(self) -> bool:
+        values = (
+            self.media_type,
+            self.media_mime_type,
+            self.media_filename,
+            self.media_url,
+        )
+        return any(_looks_like_audio(value) for value in values if value)
 
 
 def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]:
@@ -59,6 +74,8 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
     whatsapp = message.get("whatsapp") if isinstance(message.get("whatsapp"), dict) else {}
     whatsapp_text = whatsapp.get("text") if isinstance(whatsapp.get("text"), dict) else {}
     contact = message.get("contact") if isinstance(message.get("contact"), dict) else {}
+    media = _find_media_data(payload) or {}
+    has_audio_container = _contains_media_key(payload, ("audio", "voice"))
 
     text = (
         whatsapp_text.get("body")
@@ -111,12 +128,71 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
     )
     event_type = payload.get("event") or payload.get("type") or data.get("event")
     is_outgoing = _is_outgoing_message(payload)
+    media_url = (
+        _nested_text(whatsapp, ("audio", "url"))
+        or _nested_text(whatsapp, ("media", "url"))
+        or _nested_text(whatsapp, ("file", "url"))
+        or _nested_text(message, ("audio", "url"))
+        or _nested_text(message, ("media", "url"))
+        or _nested_text(message, ("file", "url"))
+        or _media_text(media, ("url", "mediaUrl", "media_url", "downloadUrl", "download_url", "fileUrl", "file_url"))
+        or _deep_first_text(
+            payload,
+            (
+                "audioUrl",
+                "audio_url",
+                "mediaUrl",
+                "media_url",
+                "downloadUrl",
+                "download_url",
+                "fileUrl",
+                "file_url",
+            ),
+        )
+    )
+    media_id = (
+        _nested_text(whatsapp, ("audio", "id"))
+        or _nested_text(whatsapp, ("media", "id"))
+        or _nested_text(message, ("audio", "id"))
+        or _nested_text(message, ("media", "id"))
+        or _media_text(media, ("id", "mediaId", "media_id", "fileId", "file_id"))
+        or _deep_first_text(payload, ("mediaId", "media_id", "fileId", "file_id"))
+    )
+    media_type = (
+        _nested_text(whatsapp, ("audio", "type"))
+        or _nested_text(whatsapp, ("media", "type"))
+        or _nested_text(message, ("audio", "type"))
+        or _nested_text(message, ("media", "type"))
+        or _media_text(media, ("type", "mediaType", "media_type", "messageType", "message_type"))
+        or _deep_first_text(payload, ("mediaType", "media_type", "messageType", "message_type"))
+        or ("audio" if has_audio_container else None)
+    )
+    media_mime_type = (
+        _nested_text(whatsapp, ("audio", "mime_type"))
+        or _nested_text(whatsapp, ("audio", "mimeType"))
+        or _nested_text(whatsapp, ("media", "mime_type"))
+        or _nested_text(whatsapp, ("media", "mimeType"))
+        or _nested_text(message, ("audio", "mime_type"))
+        or _nested_text(message, ("audio", "mimeType"))
+        or _nested_text(message, ("media", "mime_type"))
+        or _nested_text(message, ("media", "mimeType"))
+        or _media_text(media, ("mimeType", "mime_type", "mimetype", "contentType", "content_type"))
+        or _deep_first_text(payload, ("mimeType", "mime_type", "mimetype", "contentType", "content_type"))
+    )
+    media_filename = (
+        _nested_text(whatsapp, ("audio", "filename"))
+        or _nested_text(whatsapp, ("media", "filename"))
+        or _nested_text(message, ("audio", "filename"))
+        or _nested_text(message, ("media", "filename"))
+        or _media_text(media, ("filename", "fileName", "file_name", "name"))
+        or _deep_first_text(payload, ("fileName", "file_name", "filename"))
+    )
 
-    if not text or not from_number:
+    if not from_number or (not text and not media_url and not media_id):
         return None
 
     return IncomingMessage(
-        text=str(text).strip(),
+        text=str(text or "").strip(),
         from_number=str(from_number).strip(),
         channel_id=_to_optional_str(
             message.get("channelId")
@@ -143,6 +219,11 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         ),
         event_type=_to_optional_str(event_type),
         is_outgoing=is_outgoing,
+        media_url=_to_optional_str(media_url),
+        media_id=_to_optional_str(media_id),
+        media_type=_to_optional_str(media_type),
+        media_mime_type=_to_optional_str(media_mime_type),
+        media_filename=_to_optional_str(media_filename),
     )
 
 
@@ -306,6 +387,44 @@ class GallaboxClient:
     def close_conversation(self, conversation_id: str) -> Optional[dict[str, Any]]:
         return self.resolve_conversation(conversation_id=conversation_id)
 
+    def download_media(
+        self,
+        *,
+        media_url: Optional[str] = None,
+        media_id: Optional[str] = None,
+    ) -> tuple[bytes, Optional[str]]:
+        if not media_url and not media_id:
+            raise GallaboxError("URL ou ID da midia e obrigatorio para baixar audio.")
+
+        if media_url:
+            url = media_url
+            if url.startswith("/"):
+                if not self.api_base_url:
+                    raise GallaboxError("Defina GALLABOX_API_BASE_URL para baixar midia relativa.")
+                url = f"{self.api_base_url}{url}"
+        else:
+            endpoint_path = os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATH", "").strip()
+            if not endpoint_path:
+                raise GallaboxError(
+                    "Payload de audio nao trouxe URL. Defina GALLABOX_MEDIA_DOWNLOAD_PATH para baixar por media_id."
+                )
+            if not self.api_base_url:
+                raise GallaboxError("Defina GALLABOX_API_BASE_URL para baixar midia por ID.")
+            url = f"{self.api_base_url}{endpoint_path.format(media_id=quote(str(media_id or ''), safe=''))}"
+
+        req = request.Request(url=url, method="GET")
+        req.add_header("apiKey", self.api_key)
+        req.add_header("apiSecret", self.api_secret)
+
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                return resp.read(), resp.headers.get("Content-Type")
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            raise GallaboxError(f"Falha HTTP ao baixar midia: {exc.code} {details}") from exc
+        except error.URLError as exc:
+            raise GallaboxError(f"Falha de rede ao baixar midia: {exc.reason}") from exc
+
 
 def _to_optional_str(value: Any) -> Optional[str]:
     if value is None:
@@ -323,6 +442,62 @@ def _nested_text(value: Any, path: tuple[str, ...]) -> Optional[str]:
     if isinstance(current, (str, int, float)) and str(current).strip():
         return str(current).strip()
     return None
+
+
+def _find_media_data(value: Any) -> Optional[dict[str, Any]]:
+    if isinstance(value, dict):
+        for key in ("audio", "media", "attachment", "file", "document", "voice"):
+            candidate = value.get(key)
+            if isinstance(candidate, dict):
+                return candidate
+            if isinstance(candidate, list) and candidate and isinstance(candidate[0], dict):
+                return candidate[0]
+
+        attachments = value.get("attachments")
+        if isinstance(attachments, list) and attachments and isinstance(attachments[0], dict):
+            return attachments[0]
+
+        for child in value.values():
+            nested = _find_media_data(child)
+            if nested:
+                return nested
+
+    if isinstance(value, list):
+        for item in value:
+            nested = _find_media_data(item)
+            if nested:
+                return nested
+
+    return None
+
+
+def _contains_media_key(value: Any, keys: tuple[str, ...]) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in keys and isinstance(child, (dict, list, str)):
+                return True
+            if _contains_media_key(child, keys):
+                return True
+
+    if isinstance(value, list):
+        return any(_contains_media_key(item, keys) for item in value)
+
+    return False
+
+
+def _media_text(media: dict[str, Any], keys: tuple[str, ...]) -> Optional[str]:
+    if not isinstance(media, dict):
+        return None
+    for key in keys:
+        candidate = media.get(key)
+        if isinstance(candidate, (str, int, float)) and str(candidate).strip():
+            return str(candidate).strip()
+    return None
+
+
+def _looks_like_audio(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return any(marker in normalized for marker in ("audio", "voice", "ogg", "opus", "mpeg", "mp3", "m4a", "wav"))
 
 
 def _is_outgoing_message(payload: dict[str, Any]) -> bool:

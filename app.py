@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from ai_agent import extract_lead_info, generate_qualification_summary, get_ai_response
+from ai_agent import extract_lead_info, generate_qualification_summary, get_ai_response, transcribe_audio_bytes
 from cnpj_lookup import lookup_cnpj
 from database import (
     append_conversation_message,
@@ -1512,6 +1512,19 @@ def send_gallabox_message_if_configured(
         return {"status": "error", "detail": str(exc)}
 
 
+def transcribe_gallabox_audio(incoming) -> str:
+    client = get_gallabox_client()
+    audio_bytes, content_type = client.download_media(
+        media_url=incoming.media_url,
+        media_id=incoming.media_id,
+    )
+    return transcribe_audio_bytes(
+        audio_bytes,
+        filename=incoming.media_filename or "audio.ogg",
+        content_type=content_type or incoming.media_mime_type or "",
+    )
+
+
 def close_gallabox_conversation_if_configured(
     client: Optional[GallaboxClient],
     conversation_id: Optional[str],
@@ -1610,24 +1623,91 @@ async def handle_gallabox_webhook(request: Request):
 
     session_id = lead["session_id"]
     history = get_conversation(session_id)
-    history.append({"role": "user", "content": incoming.text})
+    incoming_text = incoming.text
+    user_message_metadata = {
+        "source": "gallabox",
+        "message_id": incoming.message_id,
+        "event_type": incoming.event_type,
+        "from_number": incoming.from_number,
+    }
+
+    if not incoming_text and not incoming.has_audio:
+        print("Gallabox webhook ignored: midia recebida sem texto e sem audio transcrevivel.")
+        return {"status": "ignored", "reason": "mensagem sem texto ou audio"}
+
+    if incoming.has_audio:
+        try:
+            transcription = transcribe_gallabox_audio(incoming)
+            if transcription:
+                incoming_text = transcription
+                user_message_metadata.update(
+                    {
+                        "message_type": "audio",
+                        "audio_transcribed": True,
+                        "media_id": incoming.media_id,
+                        "media_url_present": bool(incoming.media_url),
+                        "media_mime_type": incoming.media_mime_type,
+                    }
+                )
+                print(f"Audio Gallabox transcrito: {transcription}")
+        except Exception as exc:
+            print(f"Erro ao transcrever audio da Gallabox: {exc}")
+
+    if not incoming_text:
+        ai_response = (
+            "Recebi seu áudio, mas não consegui transcrever com segurança. "
+            "Pode enviar novamente em texto, por favor?"
+        )
+        append_conversation_message(
+            session_id,
+            "user",
+            "[Áudio recebido sem transcrição]",
+            {
+                **user_message_metadata,
+                "message_type": "audio",
+                "audio_transcribed": False,
+                "media_id": incoming.media_id,
+                "media_url_present": bool(incoming.media_url),
+                "media_mime_type": incoming.media_mime_type,
+            },
+        )
+        append_conversation_message(
+            session_id,
+            "assistant",
+            ai_response,
+            {
+                "source": "ai_sdr",
+                "reply_to_message_id": incoming.message_id,
+                "audio_transcription_failed": True,
+            },
+        )
+        provider_response = send_gallabox_message_if_configured(
+            to=incoming.from_number,
+            text=ai_response,
+            channel_id=incoming.channel_id or lead.get("channel_id"),
+            recipient_name=incoming.recipient_name,
+            conversation_id=incoming.conversation_id,
+        )
+        return {
+            "status": "audio_transcription_failed",
+            "session_id": session_id,
+            "response": ai_response,
+            "provider_response": provider_response,
+        }
+
+    history.append({"role": "user", "content": incoming_text})
     append_conversation_message(
         session_id,
         "user",
-        incoming.text,
-        {
-            "source": "gallabox",
-            "message_id": incoming.message_id,
-            "event_type": incoming.event_type,
-            "from_number": incoming.from_number,
-        },
+        incoming_text,
+        user_message_metadata,
     )
 
     consultant_response, force_finish_qualification, consultant_accepted = get_consultant_confirmation_outcome(
         history,
-        incoming.text,
+        incoming_text,
     )
-    deterministic_response = get_deterministic_response(history, incoming.text)
+    deterministic_response = get_deterministic_response(history, incoming_text)
     if consultant_response:
         ai_response = consultant_response
         history.append({"role": "assistant", "content": ai_response})
@@ -1635,14 +1715,14 @@ async def handle_gallabox_webhook(request: Request):
         ai_response = deterministic_response
         force_finish_qualification = False
         consultant_accepted = None
-        lead_info = get_required_step_lead_info(history, incoming.text)
+        lead_info = get_required_step_lead_info(history, incoming_text)
         history.append({"role": "assistant", "content": ai_response})
         if lead_info:
             save_lead(session_id, lead_info)
     else:
         runtime_guidance, force_finish_qualification, consultant_accepted = build_runtime_guidance(
             history,
-            incoming.text,
+            incoming_text,
         )
 
     if not consultant_response and not deterministic_response and runtime_guidance:
@@ -1664,7 +1744,7 @@ async def handle_gallabox_webhook(request: Request):
                 )
         history.append({"role": "assistant", "content": ai_response})
     elif not consultant_response and not deterministic_response:
-        cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming.text, history=history)
+        cnpj_response = handle_cnpj_lookup(session_id=session_id, user_message=incoming_text, history=history)
         if cnpj_response:
             ai_response = cnpj_response.response
             force_finish_qualification = False

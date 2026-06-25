@@ -4,6 +4,7 @@ Modulo de integracao com a API OpenAI para o agente SDR Fernanda.
 
 import json
 import os
+import tempfile
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -11,6 +12,7 @@ from openai import OpenAI
 load_dotenv()
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1")
 
 
 def _get_client() -> OpenAI:
@@ -18,6 +20,57 @@ def _get_client() -> OpenAI:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY nao configurada.")
     return OpenAI(api_key=api_key)
+
+
+def transcribe_audio_bytes(
+    audio_bytes: bytes,
+    *,
+    filename: str = "audio.ogg",
+    content_type: str = "",
+) -> str:
+    """Transcreve audio recebido pela Gallabox para texto em portugues."""
+    if not audio_bytes:
+        return ""
+
+    suffix = _audio_suffix(filename=filename, content_type=content_type)
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+
+        with open(temp_path, "rb") as audio_file:
+            response = _get_client().audio.transcriptions.create(
+                model=TRANSCRIPTION_MODEL,
+                file=audio_file,
+                language="pt",
+            )
+        return str(getattr(response, "text", "") or "").strip()
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+
+def _audio_suffix(*, filename: str = "", content_type: str = "") -> str:
+    filename = str(filename or "").lower()
+    content_type = str(content_type or "").lower()
+    suffixes = {
+        "ogg": ".ogg",
+        "opus": ".ogg",
+        "mpeg": ".mp3",
+        "mp3": ".mp3",
+        "mp4": ".m4a",
+        "m4a": ".m4a",
+        "wav": ".wav",
+        "webm": ".webm",
+    }
+    for marker, suffix in suffixes.items():
+        if marker in content_type or filename.endswith(suffix):
+            return suffix
+    return ".ogg"
 
 
 def get_ai_response(messages: list) -> str:
