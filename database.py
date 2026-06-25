@@ -13,6 +13,15 @@ DEFAULT_DB_PATH = "leads.db"
 
 
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+MISSING_VALUE_MARKERS = {
+    "",
+    "nao informado",
+    "não informado",
+    "nao informada",
+    "não informada",
+    "nao tenho",
+    "não tenho",
+}
 
 
 def _resolve_db_path() -> str:
@@ -735,11 +744,16 @@ def _is_qualified_lead(lead_data: Optional[dict]) -> bool:
     if not lead_data:
         return False
     required_fields = ("cnpj", "contato", "email", "telefone", "segmento")
-    return all(str(_get_lead_value(lead_data, field)).strip() for field in required_fields)
+    return all(_has_informed_value(_get_lead_value(lead_data, field)) for field in required_fields)
 
 
 def is_qualified_lead_data(lead_data: Optional[dict]) -> bool:
     return _is_qualified_lead(lead_data)
+
+
+def _has_informed_value(value: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(value or "").strip().lower())
+    return normalized not in MISSING_VALUE_MARKERS
 
 
 def _resolve_next_status(lead_data: Optional[dict], current_status: str = "") -> str:

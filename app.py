@@ -80,6 +80,7 @@ class InterestClickTestRequest(StartLeadRequest):
 
 
 conversations: dict[str, list[dict[str, str]]] = {}
+NOT_INFORMED_VALUE = "nao informado"
 
 SYSTEM_PROMPT = """Voce e a Fernanda, assistente comercial virtual da Imdepa. Voce e simpatica, profissional e objetiva.
 
@@ -261,6 +262,39 @@ def is_negative_confirmation(text: str) -> bool:
         "prefiro nao",
         "sem interesse",
     }
+
+
+def is_refusal_or_unavailable(text: str) -> bool:
+    normalized = normalize_trigger_text(text)
+    if normalized in {
+        "nao",
+        "n",
+        "nao tenho",
+        "nao sei",
+        "nao lembro",
+        "sem",
+        "sem informacao",
+        "depois",
+        "depois passo",
+    }:
+        return True
+    refusal_markers = (
+        "nao tenho",
+        "nao quero",
+        "prefiro nao",
+        "nao vou",
+        "nao posso",
+        "nao sei",
+        "nao lembro",
+        "sem email",
+        "sem e-mail",
+        "sem telefone",
+        "depois passo",
+        "passo depois",
+        "nao informar",
+        "nao passar",
+    )
+    return any(marker in normalized for marker in refusal_markers)
 
 
 def get_text_digits(text: str) -> str:
@@ -515,6 +549,41 @@ def get_phone_followup_message() -> str:
     )
 
 
+def get_refusal_followup_message(expected_step: Optional[str]) -> Optional[str]:
+    if expected_step == "cnpj":
+        return (
+            "Sem problema, vou registrar que o CNPJ nao foi informado. "
+            "Para continuar o atendimento, me informe por favor o seu nome."
+        )
+    if expected_step == "name":
+        return (
+            "Sem problema, vou registrar que o nome nao foi informado. "
+            "Para continuar, me informe por favor um e-mail para contato."
+        )
+    if expected_step == "email":
+        return (
+            "Sem problema, vou registrar que o e-mail nao foi informado. "
+            "Para o consultor conseguir falar com voce, me informe por favor um telefone com DDD."
+        )
+    if expected_step == "phone":
+        return (
+            "Entendo, vou registrar que o telefone nao foi informado. "
+            "Para seguirmos, qual o segmento da sua empresa: Agricola, Industrial ou Automotivo? "
+            "Se nao for nenhum desses, pode dizer Outro."
+        )
+    if expected_step == "segment":
+        return (
+            "Tudo bem, vou registrar o segmento como Outro. "
+            "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+        )
+    if expected_step == "optional_detail":
+        return (
+            "Sem problema, vou seguir sem esse detalhe. "
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+        )
+    return None
+
+
 def extract_contact_name_from_text(text: str) -> str:
     value = str(text or "").strip()
     if not value:
@@ -534,6 +603,17 @@ def get_required_step_lead_info(
     user_text: str,
 ) -> dict:
     expected_step = get_expected_input_step(history)
+    if is_refusal_or_unavailable(user_text):
+        if expected_step == "cnpj":
+            return {"cnpj": NOT_INFORMED_VALUE}
+        if expected_step == "name":
+            return {"contato": NOT_INFORMED_VALUE}
+        if expected_step == "email":
+            return {"email": NOT_INFORMED_VALUE}
+        if expected_step == "phone":
+            return {"telefone": NOT_INFORMED_VALUE}
+        if expected_step == "segment":
+            return {"segmento": "Outro"}
     if expected_step == "name" and has_valid_contact_name(user_text):
         contact_name = extract_contact_name_from_text(user_text) or str(user_text or "").strip()
         return {"contato": contact_name}
@@ -691,6 +771,10 @@ def get_deterministic_response(
     user_text: str,
 ) -> Optional[str]:
     expected_step = get_expected_input_step(history)
+    if is_refusal_or_unavailable(user_text):
+        refusal_response = get_refusal_followup_message(expected_step)
+        if refusal_response:
+            return refusal_response
     if expected_step == "name" and has_valid_contact_name(user_text):
         return get_name_followup_message(user_text)
     if expected_step == "email" and has_valid_email(user_text):
