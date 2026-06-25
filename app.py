@@ -82,10 +82,10 @@ class InterestClickTestRequest(StartLeadRequest):
 conversations: dict[str, list[dict[str, str]]] = {}
 NOT_INFORMED_VALUE = "nao informado"
 
-SYSTEM_PROMPT = """Voce e a Fernanda, assistente comercial virtual da Imdepa. Voce e simpatica, profissional e objetiva.
+SYSTEM_PROMPT = """Você é a Fernanda, assistente comercial virtual da Imdepa. Você é simpática, profissional e objetiva.
 
 ## Sobre a Imdepa
-A Imdepa e uma empresa brasileira com mais de 65 anos de historia, consolidada como uma das maiores e mais respeitadas distribuidoras de pecas do pais. Fundada em Caxias do Sul (RS), atua em todo o territorio nacional.
+A Imdepa é uma empresa brasileira com mais de 65 anos de história, consolidada como uma das maiores e mais respeitadas distribuidoras de peças do país. Fundada em Caxias do Sul (RS), atua em todo o território nacional.
 
 ### Portfolio (mais de 23.000 itens):
 - Rolamentos, Mancais, Retentores, Correias, Correntes, Embreagens
@@ -97,9 +97,9 @@ SKF, Timken, Sabo, Continental, Eaton, Firestone, Grupo Schaeffler (INA, FAG, LU
 Marca propria: GTOP-GBR (otima relacao custo-beneficio).
 
 ### Segmentos de mercado:
-1. Agricola - componentes para maquinas e implementos agricolas
+1. Agrícola - componentes para máquinas e implementos agrícolas
 2. Industrial - mineracao, siderurgia, usinas de acucar e alcool, etc.
-3. Automotivo - pecas para veiculos leves e pesados
+3. Automotivo - peças para veículos leves e pesados
 
 ### Diferenciais:
 - Mais de 65 anos de experiencia e tradicao
@@ -113,35 +113,35 @@ Marca propria: GTOP-GBR (otima relacao custo-beneficio).
 Voce deve conduzir uma conversa natural e amigavel com potenciais clientes (leads), seguindo o roteiro de SDR. Seu objetivo e:
 1. Apresentar brevemente a Imdepa
 2. Conduzir o atendimento inicial do lead
-3. Coletar informacoes complementares, se fizer sentido
+3. Coletar informações complementares, se fizer sentido
 4. Apresentar solucoes conectando com os diferenciais da Imdepa
 
-## Fluxo inicial do atendimento (faca em sequencia, com 1 pergunta por vez):
+## Fluxo inicial do atendimento (faça em sequência, com 1 pergunta por vez):
 1. Peca apenas o CNPJ da empresa, explicando que isso ajuda a identificar a empresa corretamente
-2. Depois de receber o CNPJ, peca o nome da pessoa de contato
-3. Depois, peca o e-mail para contato
-4. Em seguida, peca o telefone com DDD para contato
-5. Por fim, peca o segmento da empresa
+2. Depois de receber o CNPJ, peça o nome da pessoa de contato
+3. Depois, peça o e-mail para contato
+4. Em seguida, peça o telefone com DDD para contato
+5. Por fim, peça o segmento da empresa
 
-Se um CNPJ valido for informado e o nome da empresa for localizado em base publica, confirme o nome da empresa antes de pedir o proximo dado.
+Se um CNPJ válido for informado e o nome da empresa for localizado em base pública, confirme o nome da empresa antes de pedir o próximo dado.
 Apresente a Imdepa de forma breve antes de iniciar a coleta e mantenha o tom conversacional durante todo o atendimento.
-Com CNPJ, seu nome, e-mail, telefone e segmento, o lead ja deve ser tratado como qualificado.
+Com CNPJ, seu nome, e-mail, telefone e segmento, o lead já deve ser tratado como qualificado.
 Nao transforme isso em formulario: conduza de forma natural, mas respeite essa ordem.
-Nao peca outras informacoes antes de concluir essa sequencia.
-Explique quando fizer sentido que os dados servem para o consultor comercial entrar em contato ja com o contexto correto.
+Não peça outras informações antes de concluir essa sequência.
+Explique quando fizer sentido que os dados servem para o consultor comercial entrar em contato já com o contexto correto.
 
 ## Quando a resposta vier fora do esperado:
-- Nao avance para a proxima etapa se o dado obrigatorio estiver ausente ou em formato invalido.
-- Explique de forma simples por que precisa daquele dado e peca novamente somente a informacao correta, sem soar robotica.
+- Não avance para a próxima etapa se o dado obrigatório estiver ausente ou em formato inválido.
+- Explique de forma simples por que precisa daquele dado e peça novamente somente a informação correta, sem soar robótica.
 - Se o cliente mandar texto livre, pergunta, saudacao ou resposta ambigua, acolha brevemente, responda o essencial e redirecione para o dado atual.
 - Se o cliente enviar uma frase longa contendo o dado necessario, aproveite o dado e siga para a proxima etapa sem pedir novamente.
-- CNPJ precisa ter 14 digitos validos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e numero.
-- Para o segmento, pergunte somente entre Agricola, Industrial ou Automotivo. Se nenhum deles fizer sentido para o cliente, aceite e registre como Outro.
+- CNPJ precisa ter 14 dígitos válidos; e-mail precisa ter formato de e-mail; telefone precisa ter DDD e número.
+- Para o segmento, pergunte somente entre Agrícola, Industrial ou Automotivo. Se nenhum deles fizer sentido para o cliente, aceite e registre como Outro.
 - Reforce que esses dados servem para que um consultor comercial da Imdepa consiga entrar em contato corretamente.
-- Se o cliente disser que o nome da empresa localizado pelo CNPJ esta errado, peca o nome correto da empresa.
-- Depois de receber o nome correto da empresa, retome a sequencia obrigatoria pedindo o nome da pessoa de contato.
+- Se o cliente disser que o nome da empresa localizado pelo CNPJ está errado, peça o nome correto da empresa.
+- Depois de receber o nome correto da empresa, retome a sequência obrigatória pedindo o nome da pessoa de contato.
 - Nao confunda nome da empresa com nome da pessoa de contato.
-- Se o cliente demonstrar pressa, explique que faltam poucas informacoes para encaminhar corretamente ao consultor e continue com a proxima pergunta obrigatoria.
+- Se o cliente demonstrar pressa, explique que faltam poucas informações para encaminhar corretamente ao consultor e continue com a próxima pergunta obrigatória.
 
 ## Informacoes opcionais (somente depois do atendimento inicial, se fizer sentido):
 - Nome da empresa
@@ -150,35 +150,35 @@ Explique quando fizer sentido que os dados servem para o consultor comercial ent
 - Decisor(es) de compra
 
 ## Depois que CNPJ, nome, e-mail, telefone e segmento forem coletados:
-- O lead ja esta qualificado, mas a conversa nao deve encerrar automaticamente.
+- O lead já está qualificado, mas a conversa não deve encerrar automaticamente.
 - Voce pode fazer uma conversa curta e consultiva de aprofundamento, com no maximo 2 perguntas opcionais relevantes.
 - Priorize entender produtos de interesse, dor/necessidade principal ou contexto de compra.
-- Se o cliente responder uma pergunta opcional com texto livre, aceite a resposta como informacao valida; nao exija formato especifico.
-- Se a resposta opcional ja trouxer contexto suficiente, proponha o contato do consultor. Se ainda faltar contexto comercial, faca apenas mais uma pergunta objetiva.
-- Depois desse aprofundamento, obrigatoriamente proponha o proximo passo com uma pergunta objetiva de sim/nao:
-  "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
-- Se o cliente aceitar, agradeca, informe que um consultor comercial entrara em contato e diga que o atendimento automatico sera encerrado por aqui.
-- Se o cliente recusar, agradeca, diga que o atendimento ficou registrado e que o atendimento automatico sera encerrado por aqui.
-- Sempre gere um desfecho claro sobre haver ou nao contato de consultor comercial.
+- Se o cliente responder uma pergunta opcional com texto livre, aceite a resposta como informação válida; não exija formato específico.
+- Se a resposta opcional já trouxer contexto suficiente, proponha o contato do consultor. Se ainda faltar contexto comercial, faça apenas mais uma pergunta objetiva.
+- Depois desse aprofundamento, obrigatoriamente proponha o próximo passo com uma pergunta objetiva de sim/não:
+  "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
+- Se o cliente aceitar, agradeça, informe que um consultor comercial entrará em contato e diga que o atendimento automático será encerrado por aqui.
+- Se o cliente recusar, agradeça, diga que o atendimento ficou registrado e que o atendimento automático será encerrado por aqui.
+- Sempre gere um desfecho claro sobre haver ou não contato de consultor comercial.
 
 ## Regras de conduta:
-- Sempre fale em portugues brasileiro
-- Seja amigavel mas profissional
-- Faca no maximo 1 pergunta objetiva por resposta
+- Sempre fale em português brasileiro, com acentuação correta
+- Seja amigável mas profissional
+- Faça no máximo 1 pergunta objetiva por resposta
 - Adapte a conversa conforme as respostas do cliente
 - Se o cliente reclamar de prazo, destaque os 10 CDs da Imdepa
 - Se buscar preco, apresente a marca GTOP-GBR
 - Ao final, proponha agendar uma conversa com um consultor comercial
-- Nunca invente informacoes que nao estejam no contexto acima
-- Priorize frases curtas, linguagem simples e sem repetir informacoes ja ditas
-- Responda de forma curta e direta: 1 paragrafo curto ou ate 3 frases
+- Nunca invente informações que não estejam no contexto acima
+- Priorize frases curtas, linguagem simples e sem repetir informações já ditas
+- Responda de forma curta e direta: 1 parágrafo curto ou até 3 frases
 - Use emojis com moderacao (maximo 1-2 por mensagem)
-- Evite frases secas como "dado invalido"; prefira orientar exatamente como o cliente deve enviar a informacao
+- Evite frases secas como "dado inválido"; prefira orientar exatamente como o cliente deve enviar a informação
 - Sempre mantenha claro o beneficio para o cliente: encaminhamento correto e contato mais eficiente do consultor
 
 ## Inicio da conversa:
 Na primeira mensagem, apresente-se, apresente brevemente a Imdepa e depois solicite apenas o CNPJ. Exemplo:
-"Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. Para iniciar seu atendimento e identificar sua empresa corretamente, me informe o CNPJ da empresa."""
+"Olá! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores distribuidoras de peças do Brasil e atendemos clientes em todo o país. Para iniciar seu atendimento e identificar sua empresa corretamente, me informe o CNPJ da empresa."""
 
 
 def get_conversation(session_id: str) -> list[dict[str, str]]:
@@ -194,8 +194,8 @@ def get_conversation(session_id: str) -> list[dict[str, str]]:
 
 def get_initial_message() -> str:
     return (
-        "Ola! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores "
-        "distribuidoras de pecas do Brasil e atendemos clientes em todo o pais. "
+        "Olá! Eu sou a Fernanda, assistente comercial da Imdepa. Somos uma das maiores "
+        "distribuidoras de peças do Brasil e atendemos clientes em todo o país. "
         "Para iniciar seu atendimento e identificar sua empresa corretamente, me informe o CNPJ da empresa."
     )
 
@@ -441,7 +441,7 @@ def looks_like_incomplete_cnpj(text: str) -> bool:
 
 
 def get_incomplete_cnpj_message() -> str:
-    return "Esse CNPJ parece incompleto. Pode me enviar os 14 digitos do CNPJ da empresa?"
+    return "Esse CNPJ parece incompleto. Pode me enviar os 14 dígitos do CNPJ da empresa?"
 
 
 def has_substantive_text(text: str) -> bool:
@@ -454,15 +454,15 @@ def get_consultant_offer_message(user_text: str) -> str:
     if detail:
         return (
             f"Entendi, obrigado por compartilhar: {detail}. "
-            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
         )
-    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
 
 
 def get_yes_no_clarification_message() -> str:
     return (
-        "Para eu encaminhar corretamente: voce autoriza que um consultor comercial da Imdepa "
-        "entre em contato? Responda sim ou nao."
+        "Para eu encaminhar corretamente: você autoriza que um consultor comercial da Imdepa "
+        "entre em contato? Responda sim ou não."
     )
 
 
@@ -479,17 +479,17 @@ def is_consultant_handoff_final_message(text: str) -> bool:
 
 def get_final_handoff_message() -> str:
     return (
-        "Perfeito! Obrigado pelas informacoes. Sua qualificacao foi concluida e um consultor "
-        "comercial da Imdepa entrara em contato para dar continuidade. Vou encerrar este "
-        "atendimento automatico por aqui."
+        "Perfeito! Obrigado pelas informações. Sua qualificação foi concluída e um consultor "
+        "comercial da Imdepa entrará em contato para dar continuidade. Vou encerrar este "
+        "atendimento automático por aqui."
     )
 
 
 def get_final_no_handoff_message() -> str:
     return (
-        "Sem problema. Obrigado pelas informacoes. Vou deixar seu atendimento registrado e, "
-        "se precisar de apoio da Imdepa no futuro, e so chamar. Vou encerrar este atendimento "
-        "automatico por aqui."
+        "Sem problema. Obrigado pelas informações. Vou deixar seu atendimento registrado e, "
+        "se precisar de apoio da Imdepa no futuro, é só chamar. Vou encerrar este atendimento "
+        "automático por aqui."
     )
 
 
@@ -497,11 +497,11 @@ def get_segment_followup_message(user_text: str) -> str:
     if is_other_segment_response(user_text) and not has_primary_segment(user_text):
         return (
             "Entendi, vou registrar como Outro para direcionar melhor o atendimento. "
-            "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+            "Para eu entender melhor, quais produtos ou necessidades você busca na Imdepa?"
         )
     return (
-        "Perfeito, vou registrar essa informacao para direcionar melhor o atendimento. "
-        "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+        "Perfeito, vou registrar essa informação para direcionar melhor o atendimento. "
+        "Para eu entender melhor, quais produtos ou necessidades você busca na Imdepa?"
     )
 
 
@@ -510,18 +510,18 @@ def get_name_followup_message(user_text: str) -> str:
     if contact_name:
         return (
             f"Obrigado, {contact_name}. Agora, por favor, me informe o seu e-mail para contato. "
-            "Assim o consultor comercial podera falar com voce de forma mais rapida e eficiente."
+            "Assim o consultor comercial poderá falar com você de forma mais rápida e eficiente."
         )
     return (
         "Obrigado. Agora, por favor, me informe o seu e-mail para contato. "
-        "Assim o consultor comercial podera falar com voce de forma mais rapida e eficiente."
+        "Assim o consultor comercial poderá falar com você de forma mais rápida e eficiente."
     )
 
 
 def get_email_followup_message() -> str:
     return (
         "Perfeito, obrigado. Agora, por favor, me informe o telefone com DDD para que "
-        "nosso consultor possa entrar em contato com voce rapidamente."
+        "nosso consultor possa entrar em contato com você rapidamente."
     )
 
 
@@ -529,15 +529,15 @@ def get_optional_detail_consultant_offer_message(user_text: str) -> str:
     detail = str(user_text or "").strip()
     if detail:
         return (
-            f"Otimo, vou registrar: {detail}. "
-            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+            f"Ótimo, vou registrar: {detail}. "
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
         )
-    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+    return "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
 
 
 def get_missing_contact_name_after_segment_message() -> str:
     return (
-        "Obrigado pela informacao. Antes de seguir, me informe por favor o seu nome "
+        "Obrigado pela informação. Antes de seguir, me informe por favor o seu nome "
         "para o consultor saber com quem falar."
     )
 
@@ -545,41 +545,41 @@ def get_missing_contact_name_after_segment_message() -> str:
 def get_phone_followup_message() -> str:
     return (
         "Perfeito, obrigado. Para finalizar, qual o segmento da sua empresa: "
-        "Agricola, Industrial ou Automotivo? Se nao for nenhum desses, pode dizer Outro."
+        "Agrícola, Industrial ou Automotivo? Se não for nenhum desses, pode dizer Outro."
     )
 
 
 def get_refusal_followup_message(expected_step: Optional[str]) -> Optional[str]:
     if expected_step == "cnpj":
         return (
-            "Tudo bem, o CNPJ ajuda a identificar a empresa corretamente, mas vou registrar como nao informado. "
+            "Tudo bem, o CNPJ ajuda a identificar a empresa corretamente, mas vou registrar como não informado. "
             "Para continuar, me informe por favor o seu nome."
         )
     if expected_step == "name":
         return (
-            "Tudo bem, o nome ajuda o consultor a saber com quem falar, mas vou registrar como nao informado. "
+            "Tudo bem, o nome ajuda o consultor a saber com quem falar, mas vou registrar como não informado. "
             "Para continuar, me informe por favor um e-mail para contato."
         )
     if expected_step == "email":
         return (
             "Tudo bem, o e-mail ajuda o consultor a registrar e retornar o atendimento com mais agilidade, "
-            "mas vou registrar como nao informado. Para continuar, me informe por favor um telefone com DDD."
+            "mas vou registrar como não informado. Para continuar, me informe por favor um telefone com DDD."
         )
     if expected_step == "phone":
         return (
             "Entendo, o telefone ajuda o consultor a entrar em contato mais rapidamente, "
-            "mas vou registrar como nao informado. Para seguirmos, qual o segmento da sua empresa: Agricola, Industrial ou Automotivo? "
-            "Se nao for nenhum desses, pode dizer Outro."
+            "mas vou registrar como não informado. Para seguirmos, qual o segmento da sua empresa: Agrícola, Industrial ou Automotivo? "
+            "Se não for nenhum desses, pode dizer Outro."
         )
     if expected_step == "segment":
         return (
             "Tudo bem, o segmento ajuda a direcionar melhor o atendimento, mas vou registrar como Outro. "
-            "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
+            "Para eu entender melhor, quais produtos ou necessidades você busca na Imdepa?"
         )
     if expected_step == "optional_detail":
         return (
             "Sem problema, vou seguir sem esse detalhe. "
-            "Posso pedir para um consultor comercial da Imdepa entrar em contato com voce?"
+            "Posso pedir para um consultor comercial da Imdepa entrar em contato com você?"
         )
     return None
 
@@ -851,25 +851,25 @@ def build_runtime_guidance(
         digits = get_text_digits(user_text)
         if len(digits) != 14:
             return (
-                "O cliente ainda nao informou um CNPJ completo. Responda com naturalidade, explique que o CNPJ "
-                "ajuda a identificar a empresa corretamente para encaminhar ao consultor e peca novamente apenas os 14 digitos.",
+                "O cliente ainda não informou um CNPJ completo. Responda com naturalidade, explique que o CNPJ "
+                "ajuda a identificar a empresa corretamente para encaminhar ao consultor e peça novamente apenas os 14 dígitos.",
                 False,
                 None,
             )
         if not is_valid_cnpj_digits(digits):
             return (
-                "O cliente informou um CNPJ com 14 digitos, mas ele nao parece valido. "
+                "O cliente informou um CNPJ com 14 dígitos, mas ele não parece válido. "
                 "Responda de forma educada, evite tom de erro seco, explique que precisa confirmar a empresa corretamente "
-                "e peca para conferir e enviar novamente.",
+                "e peça para conferir e enviar novamente.",
                 False,
                 None,
             )
 
     if expected_step == "name" and is_company_name_correction_text(user_text):
         return (
-            "O cliente disse que o nome da empresa localizado pelo CNPJ esta errado. "
-            "Acolha a correcao, nao avance para e-mail ainda e peca apenas o nome correto da empresa. "
-            "Depois disso, a proxima etapa deve ser pedir o nome da pessoa de contato.",
+            "O cliente disse que o nome da empresa localizado pelo CNPJ está errado. "
+            "Acolha a correção, não avance para e-mail ainda e peça apenas o nome correto da empresa. "
+            "Depois disso, a próxima etapa deve ser pedir o nome da pessoa de contato.",
             False,
             None,
         )
@@ -877,21 +877,21 @@ def build_runtime_guidance(
     if expected_step == "company_name":
         if not has_valid_company_name(user_text):
             return (
-                "O cliente ainda nao informou claramente o nome correto da empresa. "
-                "Peca novamente apenas o nome correto da empresa, de forma breve.",
+                "O cliente ainda não informou claramente o nome correto da empresa. "
+                "Peça novamente apenas o nome correto da empresa, de forma breve.",
                 False,
                 None,
             )
         return (
-            "O cliente informou o nome correto da empresa. Agradeca a correcao e retome a sequencia obrigatoria "
-            "pedindo apenas o nome da pessoa de contato. Nao peca e-mail ainda.",
+            "O cliente informou o nome correto da empresa. Agradeça a correção e retome a sequência obrigatória "
+            "pedindo apenas o nome da pessoa de contato. Não peça e-mail ainda.",
             False,
             None,
         )
 
     if expected_step == "name" and not has_valid_contact_name(user_text):
         return (
-            "A resposta nao parece conter o nome da pessoa de contato. Acolha brevemente e peca novamente o nome "
+            "A resposta não parece conter o nome da pessoa de contato. Acolha brevemente e peça novamente o nome "
             "da pessoa, explicando que isso ajuda o consultor comercial a saber com quem falar.",
             False,
             None,
@@ -899,25 +899,25 @@ def build_runtime_guidance(
 
     if expected_step == "email" and not has_valid_email(user_text):
         return (
-            "A resposta nao contem um e-mail valido. Explique rapidamente que o e-mail ajuda o consultor a registrar "
-            "e retornar o atendimento, e peca um e-mail em formato valido.",
+            "A resposta não contém um e-mail válido. Explique rapidamente que o e-mail ajuda o consultor a registrar "
+            "e retornar o atendimento, e peça um e-mail em formato válido.",
             False,
             None,
         )
 
     if expected_step == "phone" and not has_valid_phone(user_text):
         return (
-            "A resposta nao contem um telefone valido com DDD. Explique que precisa do melhor telefone para o consultor "
-            "comercial entrar em contato e peca novamente o numero com DDD.",
+            "A resposta não contém um telefone válido com DDD. Explique que precisa do melhor telefone para o consultor "
+            "comercial entrar em contato e peça novamente o número com DDD.",
             False,
             None,
         )
 
     if expected_step == "segment" and not has_valid_segment(user_text):
         return (
-            "A resposta nao corresponde claramente aos segmentos Agricola, Industrial ou Automotivo. "
+            "A resposta não corresponde claramente aos segmentos Agrícola, Industrial ou Automotivo. "
             "Responda com naturalidade, explique que a Imdepa atua principalmente nesses segmentos e pergunte qual deles "
-            "mais se aproxima da empresa. Se nenhum fizer sentido, ofereca registrar como Outro.",
+            "mais se aproxima da empresa. Se nenhum fizer sentido, ofereça registrar como Outro.",
             False,
             None,
         )
@@ -925,23 +925,23 @@ def build_runtime_guidance(
         required_answers = extract_required_answers_from_history(history)
         if not required_answers["name"]:
             return (
-                "O cliente informou um segmento valido, mas o nome da pessoa de contato ainda nao foi coletado "
-                "porque houve uma correcao do nome da empresa antes. Aceite o segmento e peca apenas o nome "
+                "O cliente informou um segmento válido, mas o nome da pessoa de contato ainda não foi coletado "
+                "porque houve uma correção do nome da empresa antes. Aceite o segmento e peça apenas o nome "
                 "da pessoa de contato antes de fazer perguntas opcionais ou oferecer consultor.",
                 False,
                 None,
             )
         if is_other_segment_response(user_text) and not has_primary_segment(user_text):
             return (
-                "O cliente informou um segmento fora de Agricola, Industrial ou Automotivo. Aceite como Outro, "
+                "O cliente informou um segmento fora de Agrícola, Industrial ou Automotivo. Aceite como Outro, "
                 "diga que vai registrar dessa forma para direcionar melhor o atendimento e siga para uma pergunta "
-                "curta de aprofundamento comercial ou, se o contexto ja for suficiente, ofereca o contato do consultor.",
+                "curta de aprofundamento comercial ou, se o contexto já for suficiente, ofereça o contato do consultor.",
                 False,
                 None,
             )
         return (
-            "O cliente informou um segmento valido. Aceite a resposta e siga para uma pergunta curta de aprofundamento "
-            "comercial ou, se o contexto ja for suficiente, ofereca o contato do consultor comercial.",
+            "O cliente informou um segmento válido. Aceite a resposta e siga para uma pergunta curta de aprofundamento "
+            "comercial ou, se o contexto já for suficiente, ofereça o contato do consultor comercial.",
             False,
             None,
         )
@@ -949,23 +949,23 @@ def build_runtime_guidance(
     if expected_step == "consultant_confirmation":
         if is_positive_confirmation(user_text):
             return (
-                "O cliente autorizou o contato do consultor. Agradeca, informe que a qualificacao foi concluida "
-                "e que um consultor comercial da Imdepa entrara em contato para dar continuidade. Encerre informando "
-                "que o atendimento automatico sera encerrado por aqui e nao convide o cliente a continuar conversando com a IA.",
+                "O cliente autorizou o contato do consultor. Agradeça, informe que a qualificação foi concluída "
+                "e que um consultor comercial da Imdepa entrará em contato para dar continuidade. Encerre informando "
+                "que o atendimento automático será encerrado por aqui e não convide o cliente a continuar conversando com a IA.",
                 True,
                 True,
             )
         if is_negative_confirmation(user_text):
             return (
-                "O cliente nao autorizou o contato do consultor neste momento. Agradeca, informe que o atendimento "
-                "ficara registrado e encerre de forma cordial, sem insistir. Informe que o atendimento automatico "
-                "sera encerrado por aqui.",
+                "O cliente não autorizou o contato do consultor neste momento. Agradeça, informe que o atendimento "
+                "ficará registrado e encerre de forma cordial, sem insistir. Informe que o atendimento automático "
+                "será encerrado por aqui.",
                 True,
                 False,
             )
         return (
-            "O cliente respondeu de forma ambigua sobre autorizar o contato do consultor. Peca uma confirmacao objetiva "
-            "em sim ou nao, mantendo o tom cordial.",
+            "O cliente respondeu de forma ambígua sobre autorizar o contato do consultor. Peça uma confirmação objetiva "
+            "em sim ou não, mantendo o tom cordial.",
             False,
             None,
         )
@@ -974,15 +974,15 @@ def build_runtime_guidance(
         optional_questions = count_optional_questions(history)
         if optional_questions >= 2:
             return (
-                "O cliente respondeu a etapa de aprofundamento. Aceite a informacao como valida, conecte brevemente "
-                "com o atendimento da Imdepa e proponha o contato do consultor comercial como proximo passo, com pergunta objetiva de sim ou nao.",
+                "O cliente respondeu a etapa de aprofundamento. Aceite a informação como válida, conecte brevemente "
+                "com o atendimento da Imdepa e proponha o contato do consultor comercial como próximo passo, com pergunta objetiva de sim ou não.",
                 False,
                 None,
             )
         return (
-            "O cliente respondeu uma pergunta opcional com texto livre. Use essa informacao na conversa e mantenha tom consultivo. "
-            "Se ela ja for suficiente para o comercial, proponha o contato do consultor com pergunta de sim ou nao; "
-            "se ainda faltar contexto relevante, faca apenas mais uma pergunta objetiva de aprofundamento.",
+            "O cliente respondeu uma pergunta opcional com texto livre. Use essa informação na conversa e mantenha tom consultivo. "
+            "Se ela já for suficiente para o comercial, proponha o contato do consultor com pergunta de sim ou não; "
+            "se ainda faltar contexto relevante, faça apenas mais uma pergunta objetiva de aprofundamento.",
             False,
             None,
         )
@@ -990,7 +990,7 @@ def build_runtime_guidance(
     if expected_step == "optional_detail" and normalized in {"sim", "s", "ok"}:
         return (
             "O cliente respondeu de forma curta a uma pergunta opcional. Transforme isso em uma pergunta objetiva "
-            "para coletar o detalhe comercial que falta, sem encerrar a qualificacao ainda.",
+            "para coletar o detalhe comercial que falta, sem encerrar a qualificação ainda.",
             False,
             None,
         )
@@ -1075,7 +1075,7 @@ async def chat(msg: ChatMessage):
         except Exception as exc:
             print(f"Erro ao comunicar com a IA: {exc}")
             ai_response = (
-                "Estou com uma instabilidade momentanea no atendimento. "
+                "Estou com uma instabilidade momentânea no atendimento. "
                 "Pode tentar novamente em alguns instantes?"
             )
         history.append({"role": "assistant", "content": ai_response})
@@ -1090,7 +1090,7 @@ async def chat(msg: ChatMessage):
     except Exception as exc:
         print(f"Erro ao comunicar com a IA: {exc}")
         ai_response = (
-            "Estou com uma instabilidade momentanea no atendimento. "
+            "Estou com uma instabilidade momentânea no atendimento. "
             "Pode tentar novamente em alguns instantes?"
         )
 
@@ -1624,7 +1624,7 @@ async def handle_gallabox_webhook(request: Request):
         try:
             ai_response = ensure_ai_response_text(
                 get_ai_response(build_guided_history(history, runtime_guidance)),
-                "Obrigado pelas informacoes. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
+                "Obrigado pelas informações. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
             )
         except Exception as exc:
             print(f"Erro ao gerar resposta da IA: {exc}")
@@ -1634,7 +1634,7 @@ async def handle_gallabox_webhook(request: Request):
                 ai_response = get_final_no_handoff_message()
             else:
                 ai_response = (
-                    "Estou com uma instabilidade momentanea no atendimento. "
+                    "Estou com uma instabilidade momentânea no atendimento. "
                     "Pode tentar novamente em alguns instantes?"
                 )
         history.append({"role": "assistant", "content": ai_response})
@@ -1650,12 +1650,12 @@ async def handle_gallabox_webhook(request: Request):
             try:
                 ai_response = ensure_ai_response_text(
                     get_ai_response(history),
-                    "Obrigado pelas informacoes. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
+                    "Obrigado pelas informações. Vou seguir com seu atendimento para encaminhar corretamente ao consultor.",
                 )
             except Exception as exc:
                 print(f"Erro ao gerar resposta da IA: {exc}")
                 ai_response = (
-                    "Estou com uma instabilidade momentanea no atendimento. "
+                    "Estou com uma instabilidade momentânea no atendimento. "
                     "Pode tentar novamente em alguns instantes?"
                 )
             history.append({"role": "assistant", "content": ai_response})
@@ -1761,12 +1761,12 @@ def handle_cnpj_lookup(session_id: str, user_message: str, history: list[dict[st
         lead_info["empresa"] = lookup["empresa"]
         response_text = (
             f"Localizei a empresa {lookup['empresa']}. "
-            "Para dar sequencia ao seu atendimento, me informe seu nome."
+            "Para dar sequência ao seu atendimento, me informe seu nome."
         )
     else:
         response_text = (
             f"Recebi o CNPJ {lookup['formatted_cnpj']}. "
-            "Nao consegui localizar o nome da empresa na base publica agora. "
+            "Não consegui localizar o nome da empresa na base pública agora. "
             "Para seguir com seu atendimento, me informe seu nome."
         )
 
