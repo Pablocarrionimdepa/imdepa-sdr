@@ -445,6 +445,9 @@ class GallaboxClient:
             paths = [path.strip() for path in path_config.split("|") if path.strip()]
             if not paths:
                 paths = [
+                    "https://server.gallabox.com/media/{media_id}",
+                    "https://server.gallabox.com/messages/media/{media_id}",
+                    "https://server.gallabox.com/whatsapp/media/{media_id}",
                     "/media/{media_id}",
                     "/messages/media/{media_id}",
                     "/whatsapp/media/{media_id}",
