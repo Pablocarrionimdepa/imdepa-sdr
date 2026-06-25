@@ -326,98 +326,20 @@ def _nested_text(value: Any, path: tuple[str, ...]) -> Optional[str]:
 
 
 def _is_outgoing_message(payload: dict[str, Any]) -> bool:
-    event_type = _deep_first_text(
-        payload,
-        (
-            "event",
-            "type",
-            "eventType",
-            "event_name",
-            "eventName",
-            "webhookEvent",
-        ),
-    )
-    if _looks_like_outgoing_event(event_type):
-        return True
-
     outgoing_values = {
-        "out",
-        "outbound",
         "outgoing",
         "sent",
         "delivered",
         "read",
         "failed",
         "template_sent",
-        "message_sent",
-        "message_delivered",
-        "message_read",
-        "message_failed",
     }
-    for key in (
-        "direction",
-        "messageDirection",
-        "message_direction",
-        "messageStatus",
-        "message_status",
-        "status",
-        "flow",
-        "messageFlow",
-        "message_flow",
-    ):
+    for key in ("direction", "messageDirection", "status", "messageStatus"):
         value = _deep_first_text(payload, (key,))
-        if _normalize_marker(value) in outgoing_values:
+        if value and value.strip().lower() in outgoing_values:
             return True
 
-    origin_values = {
-        "admin",
-        "agent",
-        "api",
-        "bot",
-        "business",
-        "operator",
-        "system",
-        "team_member",
-        "teammate",
-    }
-    for key in (
-        "actorType",
-        "actor_type",
-        "authorType",
-        "author_type",
-        "createdByType",
-        "created_by_type",
-        "messageSource",
-        "message_source",
-        "origin",
-        "senderType",
-        "sender_type",
-        "sentBy",
-        "sent_by",
-        "source",
-    ):
-        value = _deep_first_text(payload, (key,))
-        if _normalize_marker(value) in origin_values:
-            return True
-
-    for key in (
-        "echo",
-        "fromMe",
-        "from_me",
-        "isEcho",
-        "is_echo",
-        "isFromMe",
-        "is_from_me",
-        "isOutgoing",
-        "is_outgoing",
-        "isOutbound",
-        "is_outbound",
-        "isSentByMe",
-        "is_sent_by_me",
-        "outgoing",
-        "sentByMe",
-        "sent_by_me",
-    ):
+    for key in ("fromMe", "from_me", "isFromMe", "outgoing"):
         value = _deep_first_value(payload, key)
         if isinstance(value, bool) and value:
             return True
@@ -425,45 +347,6 @@ def _is_outgoing_message(payload: dict[str, Any]) -> bool:
             return True
 
     return False
-
-
-def _looks_like_outgoing_event(value: Any) -> bool:
-    normalized = _normalize_marker(value)
-    if not normalized:
-        return False
-    if any(marker in normalized for marker in ("incoming", "inbound", "received")):
-        return False
-    return any(
-        marker in normalized
-        for marker in (
-            "delivered",
-            "failed",
-            "message_delivered",
-            "message_failed",
-            "message_read",
-            "message_sent",
-            "message_status",
-            "outbound",
-            "outgoing",
-            "read",
-            "sent",
-            "template_sent",
-        )
-    )
-
-
-def _normalize_marker(value: Any) -> str:
-    if value is None:
-        return ""
-    return (
-        str(value)
-        .strip()
-        .lower()
-        .replace("-", "_")
-        .replace(".", "_")
-        .replace("/", "_")
-        .replace(" ", "_")
-    )
 
 
 def _deep_first_text(value: Any, keys: tuple[str, ...]) -> Optional[str]:
