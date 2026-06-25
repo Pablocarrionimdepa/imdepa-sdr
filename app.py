@@ -552,28 +552,28 @@ def get_phone_followup_message() -> str:
 def get_refusal_followup_message(expected_step: Optional[str]) -> Optional[str]:
     if expected_step == "cnpj":
         return (
-            "Sem problema, vou registrar que o CNPJ nao foi informado. "
-            "Para continuar o atendimento, me informe por favor o seu nome."
+            "Tudo bem, o CNPJ ajuda a identificar a empresa corretamente, mas vou registrar como nao informado. "
+            "Para continuar, me informe por favor o seu nome."
         )
     if expected_step == "name":
         return (
-            "Sem problema, vou registrar que o nome nao foi informado. "
+            "Tudo bem, o nome ajuda o consultor a saber com quem falar, mas vou registrar como nao informado. "
             "Para continuar, me informe por favor um e-mail para contato."
         )
     if expected_step == "email":
         return (
-            "Sem problema, vou registrar que o e-mail nao foi informado. "
-            "Para o consultor conseguir falar com voce, me informe por favor um telefone com DDD."
+            "Tudo bem, o e-mail ajuda o consultor a registrar e retornar o atendimento com mais agilidade, "
+            "mas vou registrar como nao informado. Para continuar, me informe por favor um telefone com DDD."
         )
     if expected_step == "phone":
         return (
-            "Entendo, vou registrar que o telefone nao foi informado. "
-            "Para seguirmos, qual o segmento da sua empresa: Agricola, Industrial ou Automotivo? "
+            "Entendo, o telefone ajuda o consultor a entrar em contato mais rapidamente, "
+            "mas vou registrar como nao informado. Para seguirmos, qual o segmento da sua empresa: Agricola, Industrial ou Automotivo? "
             "Se nao for nenhum desses, pode dizer Outro."
         )
     if expected_step == "segment":
         return (
-            "Tudo bem, vou registrar o segmento como Outro. "
+            "Tudo bem, o segmento ajuda a direcionar melhor o atendimento, mas vou registrar como Outro. "
             "Para eu entender melhor, quais produtos ou necessidades voce busca na Imdepa?"
         )
     if expected_step == "optional_detail":
@@ -640,6 +640,9 @@ def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
     normalized = normalize_trigger_text(text)
     if not normalized:
         return None
+    requested_step = get_requested_step_from_text(normalized)
+    if requested_step:
+        return requested_step
     if "consultor comercial" in normalized and (
         "entrar em contato" in normalized
         or "contato com voce" in normalized
@@ -647,29 +650,61 @@ def get_expected_step_from_assistant_text(text: str) -> Optional[str]:
         or "conversa" in normalized
     ):
         return "consultant_confirmation"
-    if "cnpj" in normalized:
-        return "cnpj"
-    if "e-mail" in normalized or "email" in normalized:
-        return "email"
-    if "telefone" in normalized or "whatsapp" in normalized:
-        return "phone"
     if is_optional_question_text(normalized):
         return "optional_detail"
-    if "segmento" in normalized:
+    return None
+
+
+def get_requested_step_from_text(normalized_text: str) -> Optional[str]:
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"[.!?]\s*", normalized_text)
+        if sentence.strip()
+    ]
+    for sentence in reversed(sentences or [normalized_text]):
+        step = get_requested_step_from_sentence(sentence)
+        if step:
+            return step
+    return get_requested_step_from_sentence(normalized_text)
+
+
+def get_requested_step_from_sentence(sentence: str) -> Optional[str]:
+    asks = any(
+        marker in sentence
+        for marker in (
+            "me informe",
+            "pode me informar",
+            "poderia me informar",
+            "me envie",
+            "envie",
+            "qual",
+            "quais",
+            "para continuar",
+            "para seguirmos",
+            "para finalizar",
+        )
+    )
+    if not asks:
+        return None
+    if "consultor comercial" in sentence and (
+        "entrar em contato" in sentence or "contato com voce" in sentence
+    ):
+        return "consultant_confirmation"
+    if "nome correto" in sentence and "empresa" in sentence:
+        return "company_name"
+    if "cnpj" in sentence:
+        return "cnpj"
+    if "e-mail" in sentence or "email" in sentence:
+        return "email"
+    if "telefone" in sentence or "whatsapp" in sentence or "ddd" in sentence:
+        return "phone"
+    if "segmento" in sentence:
         return "segment"
     if (
-        "nome correto da sua empresa" in normalized
-        or "nome correto da empresa" in normalized
-        or "confirme" in normalized
-        and "nome" in normalized
-        and "empresa" in normalized
-    ):
-        return "company_name"
-    if (
-        "seu nome" in normalized
-        or "nome para contato" in normalized
-        or "nome do contato" in normalized
-        or ("me informe" in normalized and "nome" in normalized)
+        "seu nome" in sentence
+        or "nome para contato" in sentence
+        or "nome do contato" in sentence
+        or ("nome" in sentence and "pessoa" in sentence)
     ):
         return "name"
     return None
