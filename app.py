@@ -1160,6 +1160,11 @@ async def api_debug_gallabox_status():
         "api_base_url_configured": bool(os.getenv("GALLABOX_API_BASE_URL", "").strip()),
         "channel_id_configured": bool(os.getenv("GALLABOX_CHANNEL_ID", "").strip()),
         "messages_path": os.getenv("GALLABOX_MESSAGES_PATH", "/messages/whatsapp"),
+        "media_download_path_configured": bool(
+            os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATH", "").strip()
+            or os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATHS", "").strip()
+        ),
+        "transcription_model": os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1"),
         "webhook_secret_configured": bool(os.getenv("GALLABOX_WEBHOOK_SECRET", "").strip()),
         "skip_signature_validation": should_skip_gallabox_signature_validation(),
         "interest_button_label": get_interest_button_label(),

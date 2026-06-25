@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import base64
 from dataclasses import dataclass
 from typing import Any, Optional
 from urllib import error, request
@@ -135,18 +136,39 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         or _nested_text(message, ("audio", "url"))
         or _nested_text(message, ("media", "url"))
         or _nested_text(message, ("file", "url"))
-        or _media_text(media, ("url", "mediaUrl", "media_url", "downloadUrl", "download_url", "fileUrl", "file_url"))
+        or _media_text(
+            media,
+            (
+                "url",
+                "link",
+                "href",
+                "mediaUrl",
+                "media_url",
+                "mediaLink",
+                "media_link",
+                "downloadUrl",
+                "download_url",
+                "fileUrl",
+                "file_url",
+            ),
+        )
         or _deep_first_text(
             payload,
             (
                 "audioUrl",
                 "audio_url",
+                "audioLink",
+                "audio_link",
                 "mediaUrl",
                 "media_url",
+                "mediaLink",
+                "media_link",
                 "downloadUrl",
                 "download_url",
                 "fileUrl",
                 "file_url",
+                "link",
+                "href",
             ),
         )
     )
@@ -396,34 +418,114 @@ class GallaboxClient:
         if not media_url and not media_id:
             raise GallaboxError("URL ou ID da midia e obrigatorio para baixar audio.")
 
-        if media_url:
-            url = media_url
-            if url.startswith("/"):
-                if not self.api_base_url:
-                    raise GallaboxError("Defina GALLABOX_API_BASE_URL para baixar midia relativa.")
-                url = f"{self.api_base_url}{url}"
-        else:
-            endpoint_path = os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATH", "").strip()
-            if not endpoint_path:
-                raise GallaboxError(
-                    "Payload de audio nao trouxe URL. Defina GALLABOX_MEDIA_DOWNLOAD_PATH para baixar por media_id."
-                )
-            if not self.api_base_url:
-                raise GallaboxError("Defina GALLABOX_API_BASE_URL para baixar midia por ID.")
-            url = f"{self.api_base_url}{endpoint_path.format(media_id=quote(str(media_id or ''), safe=''))}"
+        errors: list[str] = []
+        for url in self._media_download_urls(media_url=media_url, media_id=media_id):
+            try:
+                return self._download_media_url(url)
+            except GallaboxError as exc:
+                errors.append(str(exc))
 
+        raise GallaboxError("Nao foi possivel baixar midia. Tentativas: " + " | ".join(errors))
+
+    def _media_download_urls(
+        self,
+        *,
+        media_url: Optional[str],
+        media_id: Optional[str],
+    ) -> list[str]:
+        urls: list[str] = []
+        if media_url:
+            urls.append(self._absolute_media_url(media_url))
+
+        if media_id:
+            path_config = (
+                os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATHS", "").strip()
+                or os.getenv("GALLABOX_MEDIA_DOWNLOAD_PATH", "").strip()
+            )
+            paths = [path.strip() for path in path_config.split("|") if path.strip()]
+            if not paths:
+                paths = [
+                    "/media/{media_id}",
+                    "/messages/media/{media_id}",
+                    "/whatsapp/media/{media_id}",
+                ]
+            for path in paths:
+                if not self.api_base_url:
+                    continue
+                formatted = path.format(media_id=quote(str(media_id or ""), safe=""))
+                urls.append(self._absolute_media_url(formatted))
+
+        return list(dict.fromkeys(urls))
+
+    def _absolute_media_url(self, url_or_path: str) -> str:
+        value = str(url_or_path or "").strip()
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+        if not self.api_base_url:
+            raise GallaboxError("Defina GALLABOX_API_BASE_URL para baixar midia relativa.")
+        if not value.startswith("/"):
+            value = "/" + value
+        return f"{self.api_base_url}{value}"
+
+    def _download_media_url(self, url: str) -> tuple[bytes, Optional[str]]:
         req = request.Request(url=url, method="GET")
         req.add_header("apiKey", self.api_key)
         req.add_header("apiSecret", self.api_secret)
 
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                return resp.read(), resp.headers.get("Content-Type")
+                raw = resp.read()
+                content_type = resp.headers.get("Content-Type")
+                return self._media_bytes_from_response(raw, content_type)
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
-            raise GallaboxError(f"Falha HTTP ao baixar midia: {exc.code} {details}") from exc
+            raise GallaboxError(f"{url}: HTTP {exc.code} {details}") from exc
         except error.URLError as exc:
-            raise GallaboxError(f"Falha de rede ao baixar midia: {exc.reason}") from exc
+            raise GallaboxError(f"{url}: rede {exc.reason}") from exc
+
+    def _media_bytes_from_response(
+        self,
+        raw: bytes,
+        content_type: Optional[str],
+    ) -> tuple[bytes, Optional[str]]:
+        if not raw:
+            raise GallaboxError("Resposta de midia vazia.")
+
+        if content_type and "json" not in content_type.lower():
+            return raw, content_type
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return raw, content_type
+
+        nested_url = _deep_first_text(
+            payload,
+            (
+                "url",
+                "link",
+                "href",
+                "mediaUrl",
+                "media_url",
+                "downloadUrl",
+                "download_url",
+                "fileUrl",
+                "file_url",
+            ),
+        )
+        if nested_url:
+            return self._download_media_url(self._absolute_media_url(nested_url))
+
+        encoded = _deep_first_text(payload, ("base64", "data", "content", "file"))
+        if encoded:
+            if "," in encoded and encoded.strip().lower().startswith("data:"):
+                encoded = encoded.split(",", 1)[1]
+            try:
+                return base64.b64decode(encoded), content_type
+            except Exception as exc:
+                raise GallaboxError("JSON de midia trouxe base64 invalido.") from exc
+
+        raise GallaboxError("Resposta JSON de midia nao trouxe URL nem conteudo de audio.")
 
 
 def _to_optional_str(value: Any) -> Optional[str]:
