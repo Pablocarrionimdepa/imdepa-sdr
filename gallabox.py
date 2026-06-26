@@ -131,19 +131,28 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
     is_outgoing = _is_outgoing_message(payload)
     media_url = (
         _nested_text(whatsapp, ("audio", "url"))
+        or _nested_text(whatsapp, ("audio", "path"))
         or _nested_text(whatsapp, ("media", "url"))
+        or _nested_text(whatsapp, ("media", "path"))
         or _nested_text(whatsapp, ("file", "url"))
+        or _nested_text(whatsapp, ("file", "path"))
         or _nested_text(message, ("audio", "url"))
+        or _nested_text(message, ("audio", "path"))
         or _nested_text(message, ("media", "url"))
+        or _nested_text(message, ("media", "path"))
         or _nested_text(message, ("file", "url"))
+        or _nested_text(message, ("file", "path"))
         or _media_text(
             media,
             (
                 "url",
+                "path",
                 "link",
                 "href",
                 "mediaUrl",
                 "media_url",
+                "mediaPath",
+                "media_path",
                 "mediaLink",
                 "media_link",
                 "downloadUrl",
