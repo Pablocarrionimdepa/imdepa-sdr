@@ -330,6 +330,7 @@ class GallaboxClient:
             "recipient": {
                 "name": recipient_name or to,
                 "phone": to,
+                "rawPhone": to,
             },
             "whatsapp": {
                 "type": "text",
@@ -350,7 +351,9 @@ class GallaboxClient:
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as resp:
                 raw = resp.read().decode("utf-8") or "{}"
-                return json.loads(raw)
+                result = json.loads(raw)
+                result["_request_payload"] = payload
+                return result
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
             raise GallaboxError(f"Falha HTTP ao enviar mensagem: {exc.code} {details}") from exc
