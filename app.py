@@ -1317,20 +1317,20 @@ def start_fernanda_from_interest_click(
 ) -> dict:
     lead, initial_message_created = activate_lead(name=name, phone=phone, channel_id=channel_id)
     initial_message = get_initial_message()
-    provider_response = None
-    if initial_message_created:
-        provider_response = send_gallabox_message_if_configured(
-            to=lead["telefone"],
-            text=initial_message,
-            channel_id=lead.get("channel_id"),
-            recipient_name=lead.get("contato"),
-            conversation_id=conversation_id,
-        )
-    else:
+    if not initial_message_created:
         print(
-            "Inicio ignorado porque o lead ja possui atendimento ativo: "
+            "Lead ja possui atendimento ativo; reenviando mensagem inicial: "
             f"source={source}, phone={lead['telefone']}, session_id={lead['session_id']}"
         )
+    send_attempted = is_gallabox_send_configured(lead.get("channel_id"))
+    provider_response = send_gallabox_message_if_configured(
+        to=lead["telefone"],
+        text=initial_message,
+        channel_id=lead.get("channel_id"),
+        recipient_name=lead.get("contato"),
+        conversation_id=conversation_id,
+    )
+    send_failed = isinstance(provider_response, dict) and provider_response.get("status") == "error"
 
     print(
         "Fernanda ativada por clique de interesse: "
@@ -1342,13 +1342,61 @@ def start_fernanda_from_interest_click(
         "session_id": lead["session_id"],
         "lead": lead,
         "response": initial_message,
-        "message_sent": initial_message_created,
+        "message_sent": bool(send_attempted and not send_failed),
+        "message_send_attempted": send_attempted,
+        "initial_message_created": initial_message_created,
         "provider_response": provider_response,
         "trigger": get_interest_button_label(),
     }
 
 
 def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
+    trigger_text = _first_payload_value(
+        payload,
+        (
+            "trigger_text",
+            "button_text",
+            "button_payload",
+            "button.text",
+            "button.title",
+            "button.payload",
+            "interactive.button_reply.title",
+            "interactive.button_reply.id",
+            "interactive.list_reply.title",
+            "interactive.list_reply.id",
+            "data.trigger_text",
+            "data.button_text",
+            "data.button_payload",
+            "data.button.text",
+            "data.button.title",
+            "data.button.payload",
+            "data.interactive.button_reply.title",
+            "data.interactive.button_reply.id",
+            "data.interactive.list_reply.title",
+            "data.interactive.list_reply.id",
+            "message.trigger_text",
+            "message.button_text",
+            "message.button_payload",
+            "message.button.text",
+            "message.button.title",
+            "message.button.payload",
+            "message.interactive.button_reply.title",
+            "message.interactive.button_reply.id",
+            "message.interactive.list_reply.title",
+            "message.interactive.list_reply.id",
+            "message.whatsapp.button.text",
+            "message.whatsapp.button.title",
+            "message.whatsapp.button.payload",
+            "message.whatsapp.interactive.button_reply.title",
+            "message.whatsapp.interactive.button_reply.id",
+            "message.whatsapp.interactive.list_reply.title",
+            "message.whatsapp.interactive.list_reply.id",
+            "message.text",
+            "message.body",
+            "text",
+            "body",
+        ),
+    )
     return {
         "name": _first_payload_value(
             payload,
@@ -1363,6 +1411,9 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
                 "data.name",
                 "data.contact.name",
                 "data.customer.name",
+                "data.message.name",
+                "data.message.contact.name",
+                "data.message.customer.name",
                 "message.contact.name",
             ),
         ),
@@ -1382,6 +1433,13 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
                 "data.from",
                 "data.contact.phone",
                 "data.contact.mobile",
+                "data.message.phone",
+                "data.message.mobile",
+                "data.message.from",
+                "data.message.from_number",
+                "data.message.contact.phone",
+                "data.message.contact.mobile",
+                "data.message.whatsapp.from",
                 "message.phone",
                 "message.from",
                 "message.from_number",
@@ -1398,6 +1456,9 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
                 "data.channel_id",
                 "data.channelId",
                 "data.channel.id",
+                "data.message.channel_id",
+                "data.message.channelId",
+                "data.message.channel.id",
                 "message.channel_id",
                 "message.channelId",
                 "message.channel.id",
@@ -1411,43 +1472,13 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
                 "conversationId",
                 "data.conversation_id",
                 "data.conversationId",
+                "data.message.conversation_id",
+                "data.message.conversationId",
                 "message.conversation_id",
                 "message.conversationId",
             ),
         ),
-        "trigger_text": _first_payload_value(
-            payload,
-            (
-                "trigger_text",
-                "button_text",
-                "button_payload",
-                "button.text",
-                "button.title",
-                "button.payload",
-                "interactive.button_reply.title",
-                "interactive.button_reply.id",
-                "data.trigger_text",
-                "data.button_text",
-                "data.button_payload",
-                "data.button.text",
-                "data.button.title",
-                "data.button.payload",
-                "data.interactive.button_reply.title",
-                "data.interactive.button_reply.id",
-                "message.trigger_text",
-                "message.button_text",
-                "message.button_payload",
-                "message.button.text",
-                "message.button.title",
-                "message.button.payload",
-                "message.interactive.button_reply.title",
-                "message.interactive.button_reply.id",
-                "message.text",
-                "message.body",
-                "text",
-                "body",
-            ),
-        ),
+        "trigger_text": trigger_text or _find_interest_text(payload),
     }
 
 
@@ -1466,6 +1497,29 @@ def _payload_value(payload: dict[str, Any], path: str) -> Any:
             return None
         current = current[part]
     return current
+
+
+def _find_interest_text(value: Any) -> str:
+    if isinstance(value, dict):
+        for child in value.values():
+            found = _find_interest_text(child)
+            if found:
+                return found
+        return ""
+
+    if isinstance(value, list):
+        for item in value:
+            found = _find_interest_text(item)
+            if found:
+                return found
+        return ""
+
+    if isinstance(value, (str, int, float)):
+        text = str(value).strip()
+        if text and is_interest_button_text(text):
+            return text
+
+    return ""
 
 
 @app.post("/api/gallabox/send")

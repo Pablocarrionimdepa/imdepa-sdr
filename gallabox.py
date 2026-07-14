@@ -85,11 +85,27 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
         or _nested_text(message, ("button", "payload"))
         or _nested_text(message, ("interactive", "button_reply", "title"))
         or _nested_text(message, ("interactive", "button_reply", "id"))
+        or _nested_text(message, ("interactive", "list_reply", "title"))
+        or _nested_text(message, ("interactive", "list_reply", "id"))
+        or _nested_text(message, ("button_reply", "title"))
+        or _nested_text(message, ("button_reply", "id"))
+        or _nested_text(message, ("list_reply", "title"))
+        or _nested_text(message, ("list_reply", "id"))
+        or _nested_text(message, ("templateButtonReply", "title"))
+        or _nested_text(message, ("templateButtonReply", "id"))
         or _nested_text(whatsapp, ("button", "text"))
         or _nested_text(whatsapp, ("button", "title"))
         or _nested_text(whatsapp, ("button", "payload"))
         or _nested_text(whatsapp, ("interactive", "button_reply", "title"))
         or _nested_text(whatsapp, ("interactive", "button_reply", "id"))
+        or _nested_text(whatsapp, ("interactive", "list_reply", "title"))
+        or _nested_text(whatsapp, ("interactive", "list_reply", "id"))
+        or _nested_text(whatsapp, ("button_reply", "title"))
+        or _nested_text(whatsapp, ("button_reply", "id"))
+        or _nested_text(whatsapp, ("list_reply", "title"))
+        or _nested_text(whatsapp, ("list_reply", "id"))
+        or _nested_text(whatsapp, ("templateButtonReply", "title"))
+        or _nested_text(whatsapp, ("templateButtonReply", "id"))
         or message.get("text")
         or message.get("message")
         or message.get("body")
@@ -100,6 +116,14 @@ def parse_incoming_message(payload: dict[str, Any]) -> Optional[IncomingMessage]
                 "button_text",
                 "buttonPayload",
                 "button_payload",
+                "buttonReply",
+                "button_reply",
+                "listReply",
+                "list_reply",
+                "templateButtonReply",
+                "quickReply",
+                "quick_reply",
+                "title",
                 "body",
                 "text",
                 "content",
