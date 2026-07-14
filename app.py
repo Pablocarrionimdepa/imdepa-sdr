@@ -1031,6 +1031,20 @@ def is_gallabox_send_configured(channel_id: Optional[str]) -> bool:
     )
 
 
+def format_gallabox_outbound_phone(phone: str) -> str:
+    digits = re.sub(r"\D+", "", str(phone or ""))
+    if not digits:
+        return ""
+
+    if digits.startswith("55") and len(digits) in {12, 13}:
+        digits = digits[2:]
+
+    if len(digits) == 10:
+        return f"{digits[:2]}9{digits[2:]}"
+
+    return digits
+
+
 def should_skip_gallabox_signature_validation() -> bool:
     return os.getenv("GALLABOX_SKIP_SIGNATURE_VALIDATION", "").strip().lower() in {
         "1",
@@ -1334,7 +1348,9 @@ def start_fernanda_from_interest_click(
             f"source={source}, phone={lead['telefone']}, session_id={lead['session_id']}"
         )
     send_attempted = is_gallabox_send_configured(lead.get("channel_id"))
-    outbound_phone = str(lead.get("phone_normalized") or lead.get("telefone") or "").strip()
+    outbound_phone = format_gallabox_outbound_phone(
+        str(lead.get("phone_normalized") or lead.get("telefone") or "").strip()
+    )
     provider_response = send_gallabox_message_if_configured(
         to=outbound_phone,
         text=initial_message,
@@ -1354,6 +1370,8 @@ def start_fernanda_from_interest_click(
         "session_id": lead["session_id"],
         "lead": lead,
         "response": initial_message,
+        "message": initial_message,
+        "text": initial_message,
         "message_sent": bool(send_attempted and not send_failed),
         "message_send_attempted": send_attempted,
         "initial_message_created": initial_message_created,
@@ -1632,6 +1650,7 @@ def send_gallabox_message_if_configured(
     recipient_name: Optional[str] = None,
     conversation_id: Optional[str] = None,
 ) -> Optional[dict]:
+    to = format_gallabox_outbound_phone(to)
     if not to or not text:
         print(f"Gallabox send skipped. to_present={bool(to)}, text_present={bool(text)}")
         return None
@@ -1931,7 +1950,7 @@ async def handle_gallabox_webhook(request: Request):
         client = get_gallabox_client()
         try:
             provider_response = client.send_text_message(
-                to=incoming.from_number,
+                to=format_gallabox_outbound_phone(incoming.from_number),
                 text=ai_response,
                 channel_id=channel_id,
                 recipient_name=incoming.recipient_name,
