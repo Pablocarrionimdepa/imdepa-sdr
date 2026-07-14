@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -1286,6 +1286,14 @@ async def webhook_start(request: Request):
     )
 
 
+@app.post("/webhook/start-text", response_class=PlainTextResponse)
+async def webhook_start_text(request: Request):
+    result = await webhook_start(request)
+    if isinstance(result, dict):
+        return str(result.get("message") or result.get("response") or "")
+    return ""
+
+
 @app.post("/api/test/interest-click")
 async def api_test_interest_click(payload: InterestClickTestRequest):
     return start_fernanda_from_interest_click(
@@ -1372,6 +1380,13 @@ def start_fernanda_from_interest_click(
         "response": initial_message,
         "message": initial_message,
         "text": initial_message,
+        "reply": initial_message,
+        "messages": [
+            {
+                "type": "text",
+                "text": initial_message,
+            }
+        ],
         "message_sent": bool(send_attempted and not send_failed),
         "message_send_attempted": send_attempted,
         "initial_message_created": initial_message_created,
