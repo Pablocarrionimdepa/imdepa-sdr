@@ -1357,6 +1357,7 @@ def start_fernanda_from_interest_click(
         "message_sent": bool(send_attempted and not send_failed),
         "message_send_attempted": send_attempted,
         "initial_message_created": initial_message_created,
+        "outbound_phone": outbound_phone,
         "provider_response": provider_response,
         "trigger": get_interest_button_label(),
     }

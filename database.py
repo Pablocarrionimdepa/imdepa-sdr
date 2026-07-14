@@ -274,6 +274,7 @@ def create_active_lead(name: str, phone: str, channel_id: str) -> dict:
 
     existing = get_lead_by_phone(phone)
     session_id = existing["session_id"] if existing else f"lead:{normalized_phone}"
+    stored_phone = normalized_phone
     now = datetime.now().isoformat()
 
     conn = get_db()
@@ -287,7 +288,7 @@ def create_active_lead(name: str, phone: str, channel_id: str) -> dict:
                     status = 'ACTIVE', updated_at = ?
                 WHERE id = ?
                 """,
-                (name.strip(), phone.strip(), normalized_phone, channel_id.strip(), now, existing["id"]),
+                (name.strip(), stored_phone, normalized_phone, channel_id.strip(), now, existing["id"]),
             )
         else:
             cursor.execute(
@@ -298,7 +299,7 @@ def create_active_lead(name: str, phone: str, channel_id: str) -> dict:
                 )
                 VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
                 """,
-                (session_id, name.strip(), phone.strip(), normalized_phone, channel_id.strip(), now, now),
+                (session_id, name.strip(), stored_phone, normalized_phone, channel_id.strip(), now, now),
             )
 
         conn.commit()
