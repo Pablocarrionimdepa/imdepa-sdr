@@ -1334,8 +1334,9 @@ def start_fernanda_from_interest_click(
             f"source={source}, phone={lead['telefone']}, session_id={lead['session_id']}"
         )
     send_attempted = is_gallabox_send_configured(lead.get("channel_id"))
+    outbound_phone = str(lead.get("phone_normalized") or lead.get("telefone") or "").strip()
     provider_response = send_gallabox_message_if_configured(
-        to=lead["telefone"],
+        to=outbound_phone,
         text=initial_message,
         channel_id=lead.get("channel_id"),
         recipient_name=lead.get("contato"),
@@ -1544,8 +1545,9 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
 def _first_payload_value(payload: dict[str, Any], paths: tuple[str, ...]) -> str:
     for path in paths:
         value = _payload_value(payload, path)
-        if value is not None and str(value).strip():
-            return str(value).strip()
+        text = _payload_text(value)
+        if text:
+            return text
     return ""
 
 
@@ -1556,6 +1558,30 @@ def _payload_value(payload: dict[str, Any], path: str) -> Any:
             return None
         current = current[part]
     return current
+
+
+def _payload_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, list):
+        for item in value:
+            text = _payload_text(item)
+            if text:
+                return text
+        return ""
+
+    if isinstance(value, dict):
+        for key in ("phone", "phoneNumber", "whatsappNumber", "wa_id", "value", "text", "body", "title", "id", "name"):
+            text = _payload_text(value.get(key))
+            if text:
+                return text
+        return ""
+
+    text = str(value).strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text.strip("[]").strip().strip("'\"").strip()
+    return text
 
 
 def _find_interest_text(value: Any) -> str:
