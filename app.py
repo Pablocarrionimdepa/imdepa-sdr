@@ -1240,16 +1240,27 @@ async def webhook_start(request: Request):
 
     fields = extract_start_payload(payload)
     trigger_text = fields.get("trigger_text", "")
+    phone = fields.get("phone", "")
+    if not trigger_text and phone:
+        trigger_text = get_interest_button_label()
+        fields["trigger_text"] = trigger_text
+        print(
+            "Gallabox start webhook sem trigger_text; assumindo interesse "
+            f"porque /webhook/start foi chamado com phone={phone!r}."
+        )
+
     if not is_interest_button_text(trigger_text):
         print(
             "Gallabox start webhook ignored: "
-            f"trigger_text={trigger_text!r}, expected={get_interest_button_label()!r}"
+            f"trigger_text={trigger_text!r}, expected={get_interest_button_label()!r}, "
+            f"phone_present={bool(phone)}"
         )
         return {
             "status": "ignored",
             "reason": "gatilho de interesse nao identificado",
             "expected_trigger": get_interest_button_label(),
             "received_trigger": trigger_text,
+            "phone_present": bool(phone),
         }
 
     return start_fernanda_from_interest_click(
@@ -1421,29 +1432,77 @@ def extract_start_payload(payload: dict[str, Any]) -> dict[str, str]:
             payload,
             (
                 "phone",
+                "phoneNumber",
+                "phone_number",
+                "whatsappNumber",
+                "whatsapp_number",
+                "wa_id",
                 "mobile",
                 "from",
                 "from_number",
                 "contact.phone",
+                "contact.phoneNumber",
+                "contact.phone_number",
+                "contact.whatsappNumber",
+                "contact.whatsapp_number",
+                "contact.wa_id",
                 "contact.mobile",
                 "customer.phone",
+                "customer.phoneNumber",
+                "customer.phone_number",
+                "customer.whatsappNumber",
+                "customer.whatsapp_number",
                 "recipient.phone",
+                "recipient.phoneNumber",
+                "recipient.phone_number",
+                "recipient.whatsappNumber",
+                "recipient.whatsapp_number",
                 "data.phone",
+                "data.phoneNumber",
+                "data.phone_number",
+                "data.whatsappNumber",
+                "data.whatsapp_number",
+                "data.wa_id",
                 "data.mobile",
                 "data.from",
                 "data.contact.phone",
+                "data.contact.phoneNumber",
+                "data.contact.phone_number",
+                "data.contact.whatsappNumber",
+                "data.contact.whatsapp_number",
+                "data.contact.wa_id",
                 "data.contact.mobile",
                 "data.message.phone",
+                "data.message.phoneNumber",
+                "data.message.phone_number",
+                "data.message.whatsappNumber",
+                "data.message.whatsapp_number",
+                "data.message.wa_id",
                 "data.message.mobile",
                 "data.message.from",
                 "data.message.from_number",
                 "data.message.contact.phone",
+                "data.message.contact.phoneNumber",
+                "data.message.contact.phone_number",
+                "data.message.contact.whatsappNumber",
+                "data.message.contact.whatsapp_number",
+                "data.message.contact.wa_id",
                 "data.message.contact.mobile",
                 "data.message.whatsapp.from",
                 "message.phone",
+                "message.phoneNumber",
+                "message.phone_number",
+                "message.whatsappNumber",
+                "message.whatsapp_number",
+                "message.wa_id",
                 "message.from",
                 "message.from_number",
                 "message.contact.phone",
+                "message.contact.phoneNumber",
+                "message.contact.phone_number",
+                "message.contact.whatsappNumber",
+                "message.contact.whatsapp_number",
+                "message.contact.wa_id",
                 "message.whatsapp.from",
             ),
         ),
