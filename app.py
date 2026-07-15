@@ -1037,10 +1037,13 @@ def format_gallabox_outbound_phone(phone: str) -> str:
         return ""
 
     if digits.startswith("55") and len(digits) in {12, 13}:
-        digits = digits[2:]
+        return digits
 
     if len(digits) == 10:
-        return f"{digits[:2]}9{digits[2:]}"
+        return f"55{digits[:2]}9{digits[2:]}"
+
+    if len(digits) == 11:
+        return f"55{digits}"
 
     return digits
 
