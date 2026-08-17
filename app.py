@@ -1291,9 +1291,7 @@ async def webhook_start(request: Request):
 
 @app.post("/webhook/start-text", response_class=PlainTextResponse)
 async def webhook_start_text(request: Request):
-    result = await webhook_start(request)
-    if isinstance(result, dict):
-        return str(result.get("message") or result.get("response") or "")
+    await webhook_start(request)
     return ""
 
 
@@ -1380,16 +1378,6 @@ def start_fernanda_from_interest_click(
         "status": "ACTIVE",
         "session_id": lead["session_id"],
         "lead": lead,
-        "response": initial_message,
-        "message": initial_message,
-        "text": initial_message,
-        "reply": initial_message,
-        "messages": [
-            {
-                "type": "text",
-                "text": initial_message,
-            }
-        ],
         "message_sent": bool(send_attempted and not send_failed),
         "message_send_attempted": send_attempted,
         "initial_message_created": initial_message_created,
@@ -2068,7 +2056,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 9095))
     host = os.getenv("HOST", "0.0.0.0")
     uvicorn.run("app:app", host=host, port=port, reload=True)
-
 
 
 
