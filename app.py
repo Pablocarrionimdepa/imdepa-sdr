@@ -5,12 +5,14 @@ Aplicacao principal FastAPI
 
 import os
 import re
+import threading
 import unicodedata
 import uuid
+from collections import defaultdict
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -35,6 +37,15 @@ from database import (
     set_lead_status,
 )
 from gallabox import GallaboxClient, GallaboxError, parse_incoming_message, verify_webhook_signature
+from zibb import (
+    ZibbClient,
+    ZibbError,
+    ZibbIdempotencyStore,
+    ZibbInboundMessage,
+    parse_zibb_inbound,
+    verify_zibb_signature,
+    zibb_deduplication_key,
+)
 
 load_dotenv()
 
@@ -1865,6 +1876,78 @@ async def handle_gallabox_webhook(request: Request):
             "provider_response": provider_response,
         }
 
+    ai_response, force_finish_qualification, consultant_accepted = generate_sdr_reply(
+        session_id,
+        history,
+        incoming_text,
+        user_message_metadata,
+        incoming.message_id,
+    )
+
+    provider_response = None
+    close_response = None
+    channel_id = incoming.channel_id or lead.get("channel_id")
+    client = None
+    if is_gallabox_send_configured(channel_id):
+        client = get_gallabox_client()
+        try:
+            provider_response = client.send_text_message(
+                to=format_gallabox_outbound_phone(incoming.from_number),
+                text=ai_response,
+                channel_id=channel_id,
+                recipient_name=incoming.recipient_name,
+                conversation_id=incoming.conversation_id,
+            )
+        except GallaboxError as exc:
+            print(f"Erro ao enviar resposta pela Gallabox: {exc}")
+            return {
+                "status": "send_failed",
+                "session_id": session_id,
+                "response": ai_response,
+                "detail": str(exc),
+            }
+    else:
+        print(f"Gallabox send not configured. Bot response: {ai_response}")
+
+    final_lead_status, qualification_finished, qualification_summary = finalize_lead_after_reply(
+        session_id,
+        history,
+        lead,
+        force_finish_qualification,
+    )
+
+    if qualification_finished:
+        try:
+            close_response = close_gallabox_conversation_if_configured(
+                client,
+                incoming.conversation_id,
+                incoming.from_number,
+                channel_id,
+            )
+        except Exception as exc:
+            print(f"Erro ao chamar fechamento da Gallabox: {exc}")
+
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "response": ai_response,
+        "lead_status": final_lead_status,
+        "qualification_finished": qualification_finished,
+        "qualification_summary": qualification_summary,
+        "consultant_accepted": consultant_accepted,
+        "provider_response": provider_response,
+        "close_response": close_response,
+    }
+
+
+def generate_sdr_reply(
+    session_id: str,
+    history: list[dict[str, str]],
+    incoming_text: str,
+    user_message_metadata: dict,
+    reply_to_message_id: Optional[str],
+) -> tuple[str, bool, Optional[bool]]:
+    """Registra a mensagem do lead e gera a resposta da Fernanda (independe do provedor)."""
     history.append({"role": "user", "content": incoming_text})
     append_conversation_message(
         session_id,
@@ -1944,35 +2027,20 @@ async def handle_gallabox_webhook(request: Request):
         ai_response,
         {
             "source": "ai_sdr",
-            "reply_to_message_id": incoming.message_id,
+            "reply_to_message_id": reply_to_message_id,
         },
     )
 
-    provider_response = None
-    close_response = None
-    channel_id = incoming.channel_id or lead.get("channel_id")
-    client = None
-    if is_gallabox_send_configured(channel_id):
-        client = get_gallabox_client()
-        try:
-            provider_response = client.send_text_message(
-                to=format_gallabox_outbound_phone(incoming.from_number),
-                text=ai_response,
-                channel_id=channel_id,
-                recipient_name=incoming.recipient_name,
-                conversation_id=incoming.conversation_id,
-            )
-        except GallaboxError as exc:
-            print(f"Erro ao enviar resposta pela Gallabox: {exc}")
-            return {
-                "status": "send_failed",
-                "session_id": session_id,
-                "response": ai_response,
-                "detail": str(exc),
-            }
-    else:
-        print(f"Gallabox send not configured. Bot response: {ai_response}")
+    return ai_response, force_finish_qualification, consultant_accepted
 
+
+def finalize_lead_after_reply(
+    session_id: str,
+    history: list[dict[str, str]],
+    lead: dict,
+    force_finish_qualification: bool,
+) -> tuple[str, bool, Optional[str]]:
+    """Extrai dados do lead e encerra a qualificacao quando aplicavel (independe do provedor)."""
     try:
         lead_info = extract_lead_info(history)
         if lead_info and any(v for v in lead_info.values() if v):
@@ -2002,28 +2070,128 @@ async def handle_gallabox_webhook(request: Request):
     except Exception as exc:
         print(f"Erro ao finalizar qualificacao: {exc}")
 
-    if qualification_finished:
-        try:
-            close_response = close_gallabox_conversation_if_configured(
-                client,
-                incoming.conversation_id,
-                incoming.from_number,
-                channel_id,
-            )
-        except Exception as exc:
-            print(f"Erro ao chamar fechamento da Gallabox: {exc}")
+    return final_lead_status, qualification_finished, qualification_summary
 
-    return {
-        "status": "ok",
-        "session_id": session_id,
-        "response": ai_response,
-        "lead_status": final_lead_status,
-        "qualification_finished": qualification_finished,
-        "qualification_summary": qualification_summary,
-        "consultant_accepted": consultant_accepted,
-        "provider_response": provider_response,
-        "close_response": close_response,
+
+zibb_idempotency = ZibbIdempotencyStore()
+zibb_conversation_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+
+
+def get_zibb_client() -> ZibbClient:
+    api_key = os.getenv("ZIBB_API_KEY", "").strip()
+    if not api_key:
+        raise ZibbError("Configure ZIBB_API_KEY.")
+    return ZibbClient(api_key=api_key, gateway_url=os.getenv("ZIBB_GATEWAY_URL", "").strip() or None)
+
+
+def send_zibb_reply(incoming: ZibbInboundMessage, text: str) -> Optional[dict]:
+    """Responde na mesma conversa: from = numero da empresa (to recebido), to = cliente (from recebido)."""
+    try:
+        return get_zibb_client().send_text_message(
+            from_number=incoming.to_number,
+            to_number=incoming.from_number,
+            text=text,
+        )
+    except (ZibbError, ValueError) as exc:
+        print(
+            "Erro ao enviar mensagem pela Zibb: "
+            f"workspace={incoming.workspace_id}, conversation_id={incoming.conversation_id}, "
+            f"message_id={incoming.message_id}, detail={exc}"
+        )
+        return None
+
+
+@app.post("/webhooks/zibb", status_code=202)
+async def webhook_zibb(request: Request, background_tasks: BackgroundTasks):
+    raw_body = await request.body()
+    webhook_secret = os.getenv("ZIBB_WEBHOOK_SECRET", "").strip()
+    if not webhook_secret:
+        raise HTTPException(status_code=500, detail="Configure ZIBB_WEBHOOK_SECRET.")
+
+    signature = request.headers.get("x-zibb-signature", "")
+    if not verify_zibb_signature(raw_body, signature, webhook_secret):
+        print(f"Zibb webhook invalid signature: signature_present={bool(signature)}, body_bytes={len(raw_body)}")
+        raise HTTPException(status_code=401, detail="Assinatura de webhook invalida")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Payload JSON invalido") from exc
+
+    print(f"Zibb webhook body: {payload}")
+
+    incoming = parse_zibb_inbound(payload)
+    if not incoming:
+        # 2xx para a Zibb nao reenviar eventos que nao tratamos (outros tipos, midia sem texto).
+        return {"status": "ignored", "event_type": payload.get("type")}
+
+    if not zibb_idempotency.claim(zibb_deduplication_key(incoming, raw_body)):
+        print(f"Zibb webhook duplicado ignorado: message_id={incoming.message_id}")
+        return {"status": "duplicate", "message_id": incoming.message_id}
+
+    background_tasks.add_task(process_zibb_message, incoming)
+    return {"status": "accepted", "message_id": incoming.message_id, "conversation_id": incoming.conversation_id}
+
+
+def process_zibb_message(incoming: ZibbInboundMessage) -> None:
+    """Executa a Fernanda e responde pela Zibb depois do aceite do webhook."""
+    with zibb_conversation_locks[re.sub(r"\D+", "", incoming.from_number)]:
+        try:
+            _process_zibb_message(incoming)
+        except Exception as exc:
+            print(f"Erro ao processar mensagem da Zibb: message_id={incoming.message_id}, detail={exc}")
+
+
+def _process_zibb_message(incoming: ZibbInboundMessage) -> None:
+    if is_interest_button_text(incoming.text):
+        lead, _ = activate_lead(
+            name=str(incoming.contact.get("name") or incoming.from_number),
+            phone=incoming.from_number,
+            channel_id=incoming.to_number,
+        )
+        send_zibb_reply(incoming, get_initial_message())
+        print(f"Fernanda ativada por clique de interesse: source=webhooks/zibb, session_id={lead['session_id']}")
+        return
+
+    lead = get_lead_by_phone(incoming.from_number) or get_active_lead_by_message_phone(incoming.from_number)
+    if not lead:
+        print(f"Zibb webhook ignored: lead nao encontrado para telefone {incoming.from_number}.")
+        return
+    if lead["status"] != "ACTIVE":
+        print(f"Zibb webhook ignored: telefone={incoming.from_number}, lead_status={lead['status']}")
+        return
+
+    session_id = lead["session_id"]
+    history = get_conversation(session_id)
+    user_message_metadata = {
+        "source": "zibb",
+        "message_id": incoming.message_id,
+        "conversation_id": incoming.conversation_id,
+        "workspace_id": incoming.workspace_id,
+        "event_type": incoming.event_type,
+        "from_number": incoming.from_number,
     }
+    ai_response, force_finish_qualification, _ = generate_sdr_reply(
+        session_id,
+        history,
+        incoming.text,
+        user_message_metadata,
+        incoming.message_id,
+    )
+
+    if send_zibb_reply(incoming, ai_response) is None:
+        return
+
+    final_lead_status, qualification_finished, _ = finalize_lead_after_reply(
+        session_id,
+        history,
+        lead,
+        force_finish_qualification,
+    )
+    print(
+        "Zibb resposta enviada: "
+        f"session_id={session_id}, lead_status={final_lead_status}, qualification_finished={qualification_finished}"
+    )
 
 
 def handle_cnpj_lookup(session_id: str, user_message: str, history: list[dict[str, str]]) -> Optional[ChatResponse]:
